@@ -215,4 +215,43 @@ export const api = {
       body: JSON.stringify({ email }),
     });
   },
+
+  // Real-Time OTP & Google Auth
+  sendOtp: (phone: string) => {
+    return request<{
+      success: boolean;
+      message: string;
+      phone: string;
+      expires_in_seconds: number;
+      sms_gateway: string;
+      delivered_otp: string;
+    }>("/auth/otp/send", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+    });
+  },
+
+  verifyOtp: (phone: string, otp: string, name?: string) => {
+    return request<{
+      success: boolean;
+      user: UserSession;
+      patient: { id: string; name: string; phone: string; verified: boolean };
+      token: string;
+    }>("/auth/otp/verify", {
+      method: "POST",
+      body: JSON.stringify({ phone, otp, name }),
+    });
+  },
+
+  loginWithGoogle: (data: { email: string; name?: string; avatar?: string; role?: string }) => {
+    return request<{
+      success: boolean;
+      user: UserSession;
+      token: string;
+      expires_at: string;
+    }>("/auth/google", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
 };

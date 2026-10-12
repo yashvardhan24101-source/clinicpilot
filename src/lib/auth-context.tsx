@@ -8,6 +8,8 @@ interface AuthContextType {
   user: UserSession | null;
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<UserSession>;
+  loginWithGoogle: (data: { email: string; name?: string; avatar?: string; role?: string }) => Promise<UserSession>;
+  loginWithOtp: (phone: string, otp: string, name?: string) => Promise<UserSession>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
 }
@@ -68,6 +70,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithGoogle = async (data: { email: string; name?: string; avatar?: string; role?: string }) => {
+    setIsLoading(true);
+    try {
+      const res = await api.loginWithGoogle(data);
+      setUser(res.user);
+      localStorage.setItem("clinicpilot_user", JSON.stringify(res.user));
+      return res.user;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loginWithOtp = async (phone: string, otp: string, name?: string) => {
+    setIsLoading(true);
+    try {
+      const res = await api.verifyOtp(phone, otp, name);
+      setUser(res.user);
+      localStorage.setItem("clinicpilot_user", JSON.stringify(res.user));
+      return res.user;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = async () => {
     try {
       await api.logout();
@@ -90,6 +116,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isLoading,
         login,
+        loginWithGoogle,
+        loginWithOtp,
         logout,
         isAuthenticated: !!user,
       }}

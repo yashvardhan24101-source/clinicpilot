@@ -11,9 +11,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 const mockLogin = vi.fn().mockResolvedValue({});
+const mockLoginWithGoogle = vi.fn().mockResolvedValue({ id: "usr-g-1", name: "Yashvardhan" });
+const mockLoginWithOtp = vi.fn().mockResolvedValue({ id: "usr-otp-1", name: "Aarav Mehta" });
+
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({
     login: mockLogin,
+    loginWithGoogle: mockLoginWithGoogle,
+    loginWithOtp: mockLoginWithOtp,
     isLoading: false,
     user: null,
   }),
@@ -28,11 +33,12 @@ describe("Login Page - Dual Role Authentication", () => {
   it("renders role selector tabs for Patient and Clinic Staff", () => {
     render(<LoginPage />);
 
+    expect(screen.getByText("Continue with Google")).toBeInTheDocument();
     expect(screen.getByText("I am a Patient")).toBeInTheDocument();
     expect(screen.getByText("Clinic Staff")).toBeInTheDocument();
     // Default should show Patient login
     expect(screen.getByText("Patient Portal Login")).toBeInTheDocument();
-    expect(screen.getByLabelText(/mobile number/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/indian mobile number/i)).toBeInTheDocument();
   });
 
   it("switches to Clinic Staff login when Clinic Staff tab is clicked", () => {
@@ -73,5 +79,15 @@ describe("Login Page - Dual Role Authentication", () => {
       email: "reception@smilecraft.in",
       password: "demo123",
     });
+  });
+
+  it("opens Google sign-in modal when Continue with Google is clicked", () => {
+    render(<LoginPage />);
+
+    const googleBtn = screen.getByText("Continue with Google");
+    fireEvent.click(googleBtn);
+
+    expect(screen.getByText("Choose an account for ClinicPilot")).toBeInTheDocument();
+    expect(screen.getByText("yashvardhan24101@iiitnr.edu.in")).toBeInTheDocument();
   });
 });
