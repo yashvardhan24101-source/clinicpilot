@@ -492,6 +492,26 @@ export default function LoginPage() {
                         </button>
                       )}
                     </div>
+
+                    {/* WhatsApp Direct Option */}
+                    {incomingSms && (
+                      <div className="p-2.5 rounded-xl bg-mint/10 border border-mint/25 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <MessageSquare className="h-4 w-4 text-mint shrink-0" />
+                          <span className="text-[11px] text-ink font-semibold truncate">
+                            Open code in WhatsApp:
+                          </span>
+                        </div>
+                        <a
+                          href={`https://api.whatsapp.com/send?phone=91${patientPhone.replace(/\D/g, "").slice(-10)}&text=Your%20ClinicPilot%20Security%20OTP%20is:%20*${incomingSms.code}*%20(Valid%20for%205%20mins)`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1 rounded-lg bg-mint text-white text-[11px] font-bold hover:bg-mint/90 shrink-0 transition-colors"
+                        >
+                          WhatsApp &rarr;
+                        </a>
+                      </div>
+                    )}
                   </div>
 
                   <Button
