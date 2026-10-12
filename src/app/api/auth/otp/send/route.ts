@@ -7,15 +7,29 @@ interface OtpEntry {
   attempts: number;
 }
 
-// Global OTP map across requests in this Node process
+// Global OTP and Rate Limit stores across requests in this Node process
+interface RateLimitEntry {
+  timestamps: number[];
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var __clinicpilot_otp_store__: Map<string, OtpEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __clinicpilot_rate_limit_store__: Map<string, RateLimitEntry> | undefined;
 }
 
 const otpStore: Map<string, OtpEntry> =
   global.__clinicpilot_otp_store__ || new Map<string, OtpEntry>();
 global.__clinicpilot_otp_store__ = otpStore;
+
+const rateLimitStore: Map<string, RateLimitEntry> =
+  global.__clinicpilot_rate_limit_store__ || new Map<string, RateLimitEntry>();
+global.__clinicpilot_rate_limit_store__ = rateLimitStore;
+
+// Telecom Compliance: Max 3 OTP requests per 10 minutes per mobile number
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_REQUESTS_PER_WINDOW = 3;
 
 export async function POST(request: Request) {
   try {
@@ -44,9 +58,34 @@ export async function POST(request: Request) {
       );
     }
 
+    // Rate Limiting Check
+    const now = Date.now();
+    const userHistory = rateLimitStore.get(indianNumber) || { timestamps: [] };
+    const recentRequests = userHistory.timestamps.filter(
+      (t) => now - t < RATE_LIMIT_WINDOW_MS
+    );
+
+    if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+      const oldestInWindow = recentRequests[0];
+      const waitMinutes = Math.max(
+        1,
+        Math.ceil((oldestInWindow + RATE_LIMIT_WINDOW_MS - now) / 60000)
+      );
+      return NextResponse.json(
+        {
+          error: `Too many OTP requests for this number. Rate limit exceeded (max ${MAX_REQUESTS_PER_WINDOW} per 10 minutes). Please wait ${waitMinutes} minute(s) before requesting another code.`,
+        },
+        { status: 429 }
+      );
+    }
+
+    // Record request timestamp
+    recentRequests.push(now);
+    rateLimitStore.set(indianNumber, { timestamps: recentRequests });
+
     const formattedPhone = `+91 ${indianNumber.slice(0, 5)} ${indianNumber.slice(5)}`;
 
-    // Generate real 6-digit random cryptographic OTP
+    // Generate 6-digit random cryptographic OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes validity
 
@@ -57,7 +96,7 @@ export async function POST(request: Request) {
       attempts: 0,
     });
 
-    console.log(`[REAL-TIME OTP ENGINE] Generated OTP for ${formattedPhone}: ${otpCode}`);
+    console.log(`[OTP ENGINE] Generated OTP for ${formattedPhone}: ${otpCode}`);
 
     // Check if Fast2SMS API key is provided
     const fast2smsKey =
@@ -152,7 +191,9 @@ export async function POST(request: Request) {
       phone: formattedPhone,
       expires_in_seconds: 300,
       sms_gateway: smsSentViaGateway ? "live_carrier" : "in_app_push",
-      // Always return generated OTP for seamless client delivery & in-app push notification
+      dlt_notice:
+        "Indian telecom SMS delivery requires TRAI DLT registration (Entity ID & template header). In sandbox/testing mode, verification code is delivered in-app.",
+      // Return generated OTP for seamless client delivery & in-app push notification
       delivered_otp: otpCode,
     });
   } catch (err: unknown) {

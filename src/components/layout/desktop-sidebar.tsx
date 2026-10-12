@@ -71,7 +71,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
       {/* Quick Switch to Patient Portal */}
       <div className="p-3 border-b border-line-subtle bg-surface-2/40">
         <Link
-          href="/"
+          href="/patient"
           className="flex items-center justify-between px-3 py-2 rounded-xl bg-signal/10 hover:bg-signal/20 border border-signal/25 text-xs font-bold text-signal transition-all shadow-2xs group"
           title="Switch to Patient Portal"
         >

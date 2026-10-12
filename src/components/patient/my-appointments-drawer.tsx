@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import { Appointment } from "@/types/api";
 import { api } from "@/lib/api";
 import { LiveQueueBadge } from "./live-queue-badge";
-import { PrescriptionViewerModal } from "./prescription-viewer-modal";
 import {
   X,
   CalendarCheck,
@@ -17,7 +16,6 @@ import {
   MapPin,
   Calendar,
   FileText,
-  Download,
 } from "lucide-react";
 
 interface MyAppointmentsDrawerProps {
@@ -35,8 +33,6 @@ export const MyAppointmentsDrawer: React.FC<MyAppointmentsDrawerProps> = ({
 }) => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [selectedAppointmentForRx, setSelectedAppointmentForRx] = useState<Appointment | null>(null);
-  const [isRxModalOpen, setIsRxModalOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -84,14 +80,8 @@ export const MyAppointmentsDrawer: React.FC<MyAppointmentsDrawerProps> = ({
     }
   };
 
-  const handleOpenPrescription = (apt: Appointment) => {
-    setSelectedAppointmentForRx(apt);
-    setIsRxModalOpen(true);
-  };
-
   return (
-    <>
-      <div className="fixed inset-0 z-50 flex justify-end bg-ink/40 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex justify-end bg-ink/40 backdrop-blur-xs animate-in fade-in duration-200">
         <div className="relative w-full max-w-md bg-surface-1 h-full shadow-card flex flex-col border-l border-line animate-in slide-in-from-right duration-200">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-line bg-surface-2/40">
@@ -213,22 +203,9 @@ export const MyAppointmentsDrawer: React.FC<MyAppointmentsDrawerProps> = ({
                       <LiveQueueBadge tokenNumber={apt.token_number || 1} />
                     )}
 
-                    {/* Actions: Prescriptions & Cancel */}
-                    <div className="pt-2 border-t border-line flex items-center justify-between gap-2">
-                      {/* Prescription Download Button */}
-                      {!isCancelled ? (
-                        <button
-                          onClick={() => handleOpenPrescription(apt)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-signal/10 hover:bg-signal/20 text-signal text-xs font-semibold transition-colors"
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          <span>View Prescription (Rx)</span>
-                        </button>
-                      ) : (
-                        <span />
-                      )}
-
-                      {!isCancelled && !isCompleted && (
+                    {/* Actions: Cancel */}
+                    {!isCancelled && !isCompleted && (
+                      <div className="pt-2 border-t border-line flex items-center justify-end">
                         <button
                           onClick={() => handleCancelAppointment(apt)}
                           disabled={cancellingId === apt.id}
@@ -236,8 +213,8 @@ export const MyAppointmentsDrawer: React.FC<MyAppointmentsDrawerProps> = ({
                         >
                           {cancellingId === apt.id ? "Cancelling..." : "Cancel Appointment"}
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -252,13 +229,5 @@ export const MyAppointmentsDrawer: React.FC<MyAppointmentsDrawerProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Prescription Viewer Modal */}
-      <PrescriptionViewerModal
-        isOpen={isRxModalOpen}
-        onClose={() => setIsRxModalOpen(false)}
-        appointment={selectedAppointmentForRx}
-      />
-    </>
   );
 };

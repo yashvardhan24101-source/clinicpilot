@@ -44,7 +44,7 @@ export const DoctorCard: React.FC<DoctorCardProps> = ({ doctor, onBook }) => {
             </div>
             <div
               className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface-1 border border-line text-mint shadow-2xs"
-              title="Verified Doctor"
+              title="Clinic Doctor"
             >
               <CheckCircle2 className="h-3.5 w-3.5 fill-mint text-white" />
             </div>

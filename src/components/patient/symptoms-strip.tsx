@@ -15,58 +15,58 @@ export interface SymptomCategory {
 export const POPULAR_SYMPTOMS: SymptomCategory[] = [
   {
     id: "all",
-    name: "All Specialists",
+    name: "All Specialties",
     specialty: "all",
     queryHint: "",
     icon: "🩺",
   },
   {
     id: "dental",
-    name: "Toothache & Cavities",
+    name: "Dentistry",
     specialty: "Dentist",
-    queryHint: "toothache",
+    queryHint: "dentist",
     icon: "🦷",
   },
   {
-    id: "fever",
-    name: "Viral Fever & Cold",
+    id: "general",
+    name: "General Medicine",
     specialty: "General Physician",
-    queryHint: "fever",
-    icon: "🌡️",
+    queryHint: "physician",
+    icon: "🩺",
   },
   {
     id: "skin",
-    name: "Skin Rash & Acne",
+    name: "Dermatology",
     specialty: "Dermatologist",
-    queryHint: "acne",
+    queryHint: "dermatologist",
     icon: "🧴",
   },
   {
     id: "heart",
-    name: "Chest Pain & BP",
+    name: "Cardiology",
     specialty: "Cardiologist",
-    queryHint: "blood pressure",
+    queryHint: "cardiologist",
     icon: "🫀",
   },
   {
     id: "ortho",
-    name: "Joint & Back Pain",
+    name: "Orthopedics",
     specialty: "Orthopedic",
-    queryHint: "knee pain",
+    queryHint: "orthopedic",
     icon: "🦴",
   },
   {
     id: "pediatric",
-    name: "Child Health & Vaccines",
+    name: "Pediatrics",
     specialty: "Pediatrician",
-    queryHint: "vaccines",
+    queryHint: "pediatrician",
     icon: "👶",
   },
   {
     id: "ent",
-    name: "Ear, Nose & Throat",
+    name: "ENT Specialist",
     specialty: "ENT",
-    queryHint: "sinus",
+    queryHint: "ent",
     icon: "👂",
   },
 ];
@@ -86,7 +86,7 @@ export const SymptomsStrip: React.FC<SymptomsStripProps> = ({
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-signal" />
           <h2 className="text-xs font-bold uppercase tracking-wider text-ink-muted font-display">
-            Browse by Health Concern or Specialty
+            Browse by Clinic Specialty / Department
           </h2>
         </div>
         {selectedSpecialty !== "all" && (

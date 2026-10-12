@@ -35,7 +35,7 @@ export const WhatsAppPhoneSimulator: React.FC = () => {
     {
       id: "w-1",
       sender: "bot",
-      text: "Namaste! Welcome to SmileCraft Dental Clinic. Your automated healthcare assistant is active. Bookings, live tokens, and prescriptions will appear here directly.",
+      text: "Namaste! Welcome to SmileCraft Dental Clinic. Your automated healthcare assistant is active. Bookings, appointments, and live tokens will appear here directly.",
       time: "10:15 AM",
     },
     {
@@ -111,8 +111,8 @@ export const WhatsAppPhoneSimulator: React.FC = () => {
         reply = "🎟️ *Live Queue Update*:\n\nDoctor is currently with *Token #3*.\nNext up: *Token #4*.\nEstimated wait per patient: ~15 minutes.\nPlease be present in the waiting lounge 10 mins prior.";
       } else if (lower.includes("location") || lower.includes("address") || lower.includes("map")) {
         reply = "📍 *SmileCraft Clinic Address*:\n2nd Floor, Horizon Crest, Waterfield Road, Bandra West, Mumbai 400050.\nLandmark: Opposite Starbucks Reserve.\nGoogle Maps: https://maps.google.com";
-      } else if (lower.includes("prescription") || lower.includes("medicine") || lower.includes("rx")) {
-        reply = "💊 *Prescription Status*:\nYour digital prescription (Rx) with verified doctor signature is ready for download in your ClinicPilot *My Bookings* drawer.";
+      } else if (lower.includes("timing") || lower.includes("hour") || lower.includes("open")) {
+        reply = "🕒 *Clinic Timings*:\nMonday - Saturday: 09:00 AM - 08:00 PM\nSunday: 10:00 AM - 02:00 PM (Emergency appointments on call).";
       } else if (lower.includes("reschedule") || lower.includes("cancel")) {
         reply = "🔄 *Reschedule Request Received*:\nYou can reschedule your slot directly in your ClinicPilot portal, or reply with your preferred date and time.";
       }
@@ -252,10 +252,10 @@ export const WhatsAppPhoneSimulator: React.FC = () => {
               📍 Clinic Location
             </button>
             <button
-              onClick={() => handleSendMessage("How can I download my prescription?")}
+              onClick={() => handleSendMessage("What are your clinic timings?")}
               className="px-2.5 py-1 rounded-full bg-white text-slate-800 text-[10px] font-semibold border border-slate-300 hover:bg-slate-100 whitespace-nowrap shrink-0 shadow-2xs"
             >
-              💊 Prescription Rx
+              🕒 Clinic Timings
             </button>
           </div>
 

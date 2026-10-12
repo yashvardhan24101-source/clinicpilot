@@ -457,20 +457,20 @@ export const PatientBookingModal: React.FC<PatientBookingModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted font-display mb-1.5">
-                  Reason for Visit / Symptoms (Optional)
+                  Reason for Visit (Optional)
                 </label>
                 <textarea
                   rows={2}
                   value={symptoms}
                   onChange={(e) => setSymptoms(e.target.value)}
-                  placeholder="Describe your health issue or symptoms (e.g. toothache since 2 days)..."
+                  placeholder="e.g. Routine dental checkup, consultation, or follow-up visit..."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-line bg-surface-1 focus:outline-none focus:border-signal focus:ring-1 focus:ring-signal resize-none"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted font-display mb-1.5">
-                  Attach Previous Medical Report / Prescription (Optional)
+                  Attach Previous Clinic Report / File (Optional)
                 </label>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-xs font-semibold text-ink cursor-pointer transition-colors">

@@ -31,8 +31,20 @@ export default function LoginPage() {
   const router = useRouter();
   const { login, loginWithGoogle, loginWithOtp, isLoading } = useAuth();
 
-  // Active Role Tab: "patient" or "staff"
-  const [role, setRole] = useState<"patient" | "staff">("patient");
+  // Active Role Tab: "staff" (default for clinic operations) or "patient"
+  const [role, setRole] = useState<"patient" | "staff">("staff");
+
+  // Demo Shortcuts Flag (hidden by default for production clinics)
+  const [showDemoShortcuts, setShowDemoShortcuts] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("demo") === "1" || params.get("demo") === "true") {
+        setShowDemoShortcuts(true);
+      }
+    }
+  }, []);
 
   // Google Sign-In Modal State
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
@@ -96,7 +108,7 @@ export default function LoginPage() {
           })
         );
         localStorage.setItem("clinicpilot_default_portal", "patient");
-        router.push("/");
+        router.push("/patient");
       }
     } catch {
       setError("Google authentication failed. Please try again.");
@@ -222,7 +234,7 @@ export default function LoginPage() {
       localStorage.setItem("clinicpilot_default_portal", "patient");
 
       setIncomingSms(null);
-      router.push("/");
+      router.push("/patient");
     } catch (err: unknown) {
       // Fallback verification for demo code 1234 or matching code
       if (enteredOtp === "1234" || (incomingSms && enteredOtp === incomingSms.code)) {
@@ -234,7 +246,7 @@ export default function LoginPage() {
         localStorage.setItem("clinicpilot_current_patient", JSON.stringify(patientData));
         localStorage.setItem("clinicpilot_default_portal", "patient");
         setIncomingSms(null);
-        router.push("/");
+        router.push("/patient");
       } else {
         setError("Invalid OTP code. Please enter the correct code or click Resend.");
       }
@@ -259,7 +271,7 @@ export default function LoginPage() {
     };
     localStorage.setItem("clinicpilot_current_patient", JSON.stringify(patientData));
     localStorage.setItem("clinicpilot_default_portal", "patient");
-    router.push("/");
+    router.push("/patient");
   };
 
   return (
@@ -425,8 +437,8 @@ export default function LoginPage() {
                       />
                     </div>
                     <span className="text-[11px] text-ink-faint flex items-center gap-1 mt-1">
-                      <MessageSquare className="h-3 w-3 text-mint shrink-0" />
-                      Real-time SMS / WhatsApp OTP will be dispatched immediately.
+                      <MessageSquare className="h-3.5 w-3.5 text-mint shrink-0" />
+                      Carrier SMS in India requires TRAI DLT registration. In demo / test mode, OTP is verified instantly.
                     </span>
                   </div>
 
@@ -526,25 +538,27 @@ export default function LoginPage() {
                 </form>
               )}
 
-              {/* Quick One-Tap Demo Patient Login */}
-              <div className="pt-2 border-t border-line">
-                <button
-                  type="button"
-                  onClick={handleDemoPatientLogin}
-                  className="w-full py-2.5 px-3 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-xs font-bold text-ink transition-colors flex items-center justify-center gap-2"
-                >
-                  <span>⚡ 1-Tap Demo Patient: Aarav Mehta</span>
-                </button>
-              </div>
+              {/* Quick One-Tap Demo Patient Login (Hidden behind demo flag) */}
+              {showDemoShortcuts && (
+                <div className="pt-2 border-t border-line">
+                  <button
+                    type="button"
+                    onClick={handleDemoPatientLogin}
+                    className="w-full py-2.5 px-3 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-xs font-bold text-ink transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>⚡ 1-Tap Demo Patient: Aarav Mehta</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Link to browse freely */}
             <div className="text-center">
               <Link
-                href="/"
+                href="/patient"
                 className="text-xs font-semibold text-signal hover:underline inline-flex items-center gap-1"
               >
-                <span>Just searching for doctors? Browse without login</span>
+                <span>Just booking an appointment? Browse clinic doctors</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
@@ -639,53 +653,77 @@ export default function LoginPage() {
                   <span>{isLoading ? "Signing in..." : "Sign in to Dashboard"}</span>
                 </Button>
 
-                {/* 1-Tap Demo Staff Logins */}
-                <div className="pt-2 border-t border-line space-y-1.5">
-                  <span className="text-[10px] font-bold text-ink-muted uppercase tracking-wider font-display block">
-                    Quick 1-Tap Demo Logins:
-                  </span>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleDemoStaffLogin("receptionist")}
-                      className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-ink text-center transition-colors"
-                    >
-                      <span>Reception</span>
-                      <span className="block text-[9px] text-ink-muted font-normal">
-                        Priya
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDemoStaffLogin("doctor")}
-                      className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-signal text-center transition-colors"
-                    >
-                      <span>Doctor</span>
-                      <span className="block text-[9px] text-ink-muted font-normal">
-                        Dr. Ananya
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDemoStaffLogin("owner")}
-                      className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-ink text-center transition-colors"
-                    >
-                      <span>Owner</span>
-                      <span className="block text-[9px] text-ink-muted font-normal">
-                        Dr. Vikram
-                      </span>
-                    </button>
+                {/* 1-Tap Demo Staff Logins (Hidden behind demo flag) */}
+                {showDemoShortcuts && (
+                  <div className="pt-2 border-t border-line space-y-1.5">
+                    <span className="text-[10px] font-bold text-ink-muted uppercase tracking-wider font-display block">
+                      Quick 1-Tap Demo Logins:
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleDemoStaffLogin("receptionist")}
+                        className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-ink text-center transition-colors"
+                      >
+                        <span>Reception</span>
+                        <span className="block text-[9px] text-ink-muted font-normal">
+                          Priya
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDemoStaffLogin("doctor")}
+                        className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-signal text-center transition-colors"
+                      >
+                        <span>Doctor</span>
+                        <span className="block text-[9px] text-ink-muted font-normal">
+                          Dr. Ananya
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDemoStaffLogin("owner")}
+                        className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-ink text-center transition-colors"
+                      >
+                        <span>Owner</span>
+                        <span className="block text-[9px] text-ink-muted font-normal">
+                          Dr. Vikram
+                        </span>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </form>
           </div>
         )}
 
+        {/* Quick Demo Shortcuts Toggle (for testers & dev preview) */}
+        <div className="text-center pt-1">
+          <button
+            type="button"
+            onClick={() => setShowDemoShortcuts(!showDemoShortcuts)}
+            className="text-[11px] text-ink-muted hover:text-ink font-semibold underline underline-offset-2 transition-colors"
+          >
+            {showDemoShortcuts ? "Hide Demo Shortcuts" : "Need Quick Testing? Show Demo Shortcuts"}
+          </button>
+        </div>
+
+        {/* Secondary link to Patient Portal */}
+        <div className="text-center pt-1 border-t border-line/60">
+          <Link
+            href="/patient"
+            className="text-xs text-ink-muted hover:text-signal transition-colors inline-flex items-center gap-1 font-medium"
+          >
+            <span>Looking for patient appointment booking? Open Patient Portal</span>
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
         {/* Security badge footer */}
-        <div className="text-center text-[11px] text-ink-faint flex items-center justify-center gap-1.5">
+        <div className="text-center text-[11px] text-ink-faint flex items-center justify-center gap-1.5 pt-1">
           <ShieldCheck className="h-3.5 w-3.5 text-mint" />
-          <span>256-bit Encrypted Healthcare Session</span>
+          <span>Secure connection</span>
         </div>
       </div>
 

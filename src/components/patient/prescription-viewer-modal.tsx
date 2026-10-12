@@ -233,7 +233,7 @@ export const PrescriptionViewerModal: React.FC<PrescriptionViewerModalProps> = (
           <div className="pt-4 border-t border-line flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs text-mint font-semibold">
               <ShieldCheck className="h-4 w-4" />
-              <span>Digitally Verified Medical Record</span>
+              <span>Clinic Record Summary</span>
             </div>
 
             <div className="text-right">

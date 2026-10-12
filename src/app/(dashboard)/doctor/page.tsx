@@ -4,14 +4,10 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Stethoscope,
-  UserCheck,
   Clock,
   CheckCircle2,
   AlertCircle,
   FileText,
-  Plus,
-  Trash2,
-  Send,
   Sparkles,
   Phone,
   Calendar,
@@ -20,11 +16,13 @@ import {
   ArrowRight,
   UserX,
   Volume2,
+  MessageSquare,
+  Users,
+  BellRing,
 } from "lucide-react";
-import { Appointment, Doctor, PrescriptionMedicine, QueueState } from "@/types/api";
+import { Appointment, QueueState } from "@/types/api";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { PrescriptionViewerModal } from "@/components/patient/prescription-viewer-modal";
 
 export default function DoctorChamberPage() {
   const { user } = useAuth();
@@ -40,27 +38,11 @@ export default function DoctorChamberPage() {
   });
   const [loading, setLoading] = useState(true);
   const [callingNext, setCallingNext] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Active Patient for Consultation / Rx
+  // Active Patient for Consultation
   const [activePatientApt, setActivePatientApt] = useState<Appointment | null>(null);
-
-  // Rx Modal Preview
-  const [previewApt, setPreviewApt] = useState<Appointment | null>(null);
-
-  // Prescription Form State
-  const [rxDiagnosis, setRxDiagnosis] = useState("");
-  const [rxAdvice, setRxAdvice] = useState("");
-  const [rxMedicines, setRxMedicines] = useState<PrescriptionMedicine[]>([
-    {
-      name: "Amoxicillin 500mg",
-      dosage: "500 mg",
-      frequency: "1-0-1 (After Food)",
-      duration: "5 Days",
-      notes: "Take after meals with water",
-    },
-  ]);
-  const [isSavingRx, setIsSavingRx] = useState(false);
 
   // Load appointments & queue state
   const loadDoctorData = async () => {
@@ -136,7 +118,7 @@ export default function DoctorChamberPage() {
       }
 
       setDoctorStatus("in_consultation");
-      showToast(`📢 Token #${nextToken} called into Chamber 1. Alert sent!`);
+      showToast(`📢 Token #${nextToken} called into Chamber 1. Alert dispatched!`);
     } catch (e) {
       console.error(e);
       showToast("Called next token.");
@@ -145,64 +127,16 @@ export default function DoctorChamberPage() {
     }
   };
 
-  // Add Medicine row to Rx
-  const handleAddMedicine = () => {
-    setRxMedicines((prev) => [
-      ...prev,
-      {
-        name: "",
-        dosage: "",
-        frequency: "1-0-1",
-        duration: "3 Days",
-        notes: "",
-      },
-    ]);
-  };
-
-  // Remove Medicine row
-  const handleRemoveMedicine = (idx: number) => {
-    setRxMedicines((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  // Quick preset medicines
-  const handleAddPresetMedicine = (preset: { name: string; dosage: string; freq: string; dur: string; notes: string }) => {
-    setRxMedicines((prev) => [
-      ...prev,
-      {
-        name: preset.name,
-        dosage: preset.dosage,
-        frequency: preset.freq,
-        duration: preset.dur,
-        notes: preset.notes,
-      },
-    ]);
-  };
-
-  // Save & Issue Prescription
-  const handleIssuePrescription = async () => {
+  // Complete consultation administrative handoff
+  const handleCompleteConsultation = async () => {
     if (!activePatientApt) return;
-    if (!rxDiagnosis.trim()) {
-      showToast("⚠️ Please enter a clinical diagnosis first.");
-      return;
-    }
-
-    setIsSavingRx(true);
+    setIsCompleting(true);
     try {
-      const newPrescription = {
-        id: `rx-${Date.now()}`,
-        diagnosis: rxDiagnosis.trim(),
-        medicines: rxMedicines.filter((m) => m.name.trim().length > 0),
-        doctor_advice: rxAdvice.trim() || "Follow prescribed dosage and report back if symptoms persist.",
-        created_at: new Date().toISOString(),
-      };
-
       await api.updateAppointmentStatus(activePatientApt.id, "completed");
 
-      // Update local state
       const updatedApt: Appointment = {
         ...activePatientApt,
         status: "completed",
-        prescription: newPrescription,
       };
 
       setActivePatientApt(updatedApt);
@@ -210,12 +144,12 @@ export default function DoctorChamberPage() {
         prev.map((a) => (a.id === updatedApt.id ? updatedApt : a))
       );
 
-      // Save to localStorage patient bookings so patient portal immediately syncs
+      // Sync to local bookings
       try {
         const stored = JSON.parse(
           localStorage.getItem("clinicpilot_patient_bookings") || "[]"
         ) as Appointment[];
-        const idx = stored.findIndex((a) => a.id === updatedApt.id || a.booking_code === updatedApt.booking_code);
+        const idx = stored.findIndex((a) => a.id === updatedApt.id);
         if (idx !== -1) {
           stored[idx] = updatedApt;
         } else {
@@ -227,19 +161,43 @@ export default function DoctorChamberPage() {
       }
 
       setDoctorStatus("available");
-      showToast("✅ Digital Prescription (Rx) successfully signed & synced to patient portal!");
+      showToast(`✅ Consultation completed for ${activePatientApt.patient_name}. Front desk notified for billing.`);
     } catch (e) {
       console.error(e);
-      showToast("Prescription issued successfully.");
+      showToast("Consultation marked as completed.");
     } finally {
-      setIsSavingRx(false);
+      setIsCompleting(false);
     }
   };
 
-  // Quick Intercom to front-desk
+  // Mark patient as No-Show
+  const handleMarkNoShow = async () => {
+    if (!activePatientApt) return;
+    try {
+      await api.updateAppointmentStatus(activePatientApt.id, "cancelled");
+      const updatedApt: Appointment = {
+        ...activePatientApt,
+        status: "cancelled",
+      };
+      setActivePatientApt(updatedApt);
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === updatedApt.id ? updatedApt : a))
+      );
+      setDoctorStatus("available");
+      showToast(`Patient ${activePatientApt.patient_name} marked as No-Show.`);
+    } catch (e) {
+      console.error(e);
+      showToast("Marked as No-Show.");
+    }
+  };
+
+  // Intercom alert to front-desk
   const handleIntercomAlert = (msg: string) => {
     showToast(`🔔 Intercom Sent to Front Desk: "${msg}"`);
   };
+
+  const completedCount = appointments.filter((a) => a.status === "completed").length;
+  const remainingCount = appointments.filter((a) => a.status !== "completed" && a.status !== "cancelled").length;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
@@ -318,11 +276,11 @@ export default function DoctorChamberPage() {
         </div>
       </div>
 
-      {/* Main Grid: Left = Queue & Active Consultation, Right = Digital Prescription Pad */}
+      {/* Main Grid: Left = Calling Station & Queue, Right = Consultation & Handoff */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Live Queue & Current Patient (5 Cols) */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* Chamber Queue Controller */}
+        {/* Left Column: Live Queue & Current Patient (6 Cols) */}
+        <div className="lg:col-span-6 space-y-6">
+          {/* Chamber Queue Calling Station */}
           <div className="bg-surface-1 border border-line rounded-3xl p-5 shadow-card space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -402,7 +360,7 @@ export default function DoctorChamberPage() {
 
                 <div className="p-3 rounded-xl bg-surface-2 border border-line text-xs space-y-1">
                   <div className="flex justify-between text-ink-muted">
-                    <span>Chief Service:</span>
+                    <span>Service:</span>
                     <strong className="text-ink">{activePatientApt.service_name}</strong>
                   </div>
                   <div className="flex justify-between text-ink-muted">
@@ -412,7 +370,7 @@ export default function DoctorChamberPage() {
                     </span>
                   </div>
                   <div className="flex justify-between text-ink-muted">
-                    <span>Booking Code:</span>
+                    <span>Booking Pass Code:</span>
                     <span className="font-mono text-signal font-semibold">
                       {activePatientApt.booking_code || "CP-ONLINE"}
                     </span>
@@ -420,31 +378,35 @@ export default function DoctorChamberPage() {
                   {activePatientApt.attached_file_name && (
                     <div className="pt-1 border-t border-line/60 flex items-center gap-1 text-[11px] text-signal font-medium">
                       <FileText className="h-3 w-3" />
-                      <span>Attached: {activePatientApt.attached_file_name}</span>
+                      <span>Attached Report: {activePatientApt.attached_file_name}</span>
                     </div>
                   )}
                 </div>
 
-                {activePatientApt.prescription && (
-                  <div className="p-3 rounded-xl bg-mint/10 border border-mint/20 text-xs flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-mint">Prescription Issued (Rx)</p>
-                      <p className="text-[11px] text-ink-muted">
-                        Diagnosis: {activePatientApt.prescription.diagnosis}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setPreviewApt(activePatientApt)}
-                      className="text-xs font-semibold text-signal underline"
-                    >
-                      View Rx
-                    </button>
-                  </div>
-                )}
+                {/* Consultation Actions */}
+                <div className="pt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleCompleteConsultation}
+                    disabled={isCompleting || activePatientApt.status === "completed"}
+                    className="flex-1 py-2 px-3 rounded-xl bg-mint hover:bg-mint/90 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>{isCompleting ? "Updating..." : "Mark Completed"}</span>
+                  </button>
+
+                  <button
+                    onClick={handleMarkNoShow}
+                    disabled={activePatientApt.status === "cancelled"}
+                    className="py-2 px-3 rounded-xl border border-line bg-surface-2 hover:bg-coral/10 hover:text-coral hover:border-coral/30 text-ink text-xs font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                  >
+                    <UserX className="h-4 w-4" />
+                    <span>No-Show</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="p-6 text-center text-xs text-ink-muted">
-                No active patient selected. Click &quot;Call Next&quot; or select from today&apos;s list.
+                No active patient in chamber. Click &quot;Call Next&quot; or select from today&apos;s schedule.
               </div>
             )}
           </div>
@@ -452,7 +414,7 @@ export default function DoctorChamberPage() {
           {/* Today's Queue List for Dr. Ananya */}
           <div className="bg-surface-1 border border-line rounded-3xl p-5 shadow-card space-y-3">
             <h3 className="text-xs font-bold text-ink-muted font-display uppercase tracking-wider">
-              Today&apos;s Appointments ({appointments.length})
+              Today&apos;s Chamber Schedule ({appointments.length})
             </h3>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -493,254 +455,123 @@ export default function DoctorChamberPage() {
           </div>
         </div>
 
-        {/* Right Column: Digital Prescription Pad (7 Cols) */}
-        <div className="lg:col-span-7">
-          <div className="bg-surface-1 border border-line rounded-3xl p-5 sm:p-6 shadow-card space-y-5">
-            <div className="flex items-center justify-between border-b border-line pb-4">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-signal text-white">
-                  <FileText className="h-5 w-5" />
-                </div>
+        {/* Right Column: Administrative Workflow & Front-Desk Handoff (6 Cols) */}
+        <div className="lg:col-span-6 space-y-6">
+          {/* Chamber Summary Metrics */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-surface-1 border border-line rounded-2xl p-4 shadow-subtle text-center">
+              <span className="text-[11px] font-bold text-ink-muted font-display uppercase">
+                Completed
+              </span>
+              <p className="text-2xl font-black text-mint font-display mt-1">
+                {completedCount}
+              </p>
+            </div>
+            <div className="bg-surface-1 border border-line rounded-2xl p-4 shadow-subtle text-center">
+              <span className="text-[11px] font-bold text-ink-muted font-display uppercase">
+                In Queue
+              </span>
+              <p className="text-2xl font-black text-signal font-display mt-1">
+                {queueState.total_waiting}
+              </p>
+            </div>
+            <div className="bg-surface-1 border border-line rounded-2xl p-4 shadow-subtle text-center">
+              <span className="text-[11px] font-bold text-ink-muted font-display uppercase">
+                Remaining
+              </span>
+              <p className="text-2xl font-black text-ink font-display mt-1">
+                {remainingCount}
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Front-Desk Intercom Actions */}
+          <div className="bg-surface-1 border border-line rounded-3xl p-5 sm:p-6 shadow-card space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-signal text-white">
+                <Volume2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-ink font-display">
+                  Front Desk Handoff &amp; Alerts
+                </h3>
+                <p className="text-xs text-ink-muted">
+                  Notify reception staff of patient status &amp; chamber readiness
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handleIntercomAlert("Patient completed, ready for billing & discharge")}
+                className="w-full p-3 rounded-2xl border border-line bg-surface-2/60 hover:bg-signal/10 hover:border-signal/30 text-left transition-colors flex items-center justify-between group"
+              >
                 <div>
-                  <h3 className="text-base font-bold text-ink font-display">
-                    Digital Prescription Pad (Rx)
-                  </h3>
-                  <p className="text-xs text-ink-muted">
-                    Issue verified electronic prescription for {activePatientApt?.patient_name || "Patient"}
+                  <p className="text-xs font-bold text-ink group-hover:text-signal">
+                    💳 Ready for Billing &amp; Invoice
+                  </p>
+                  <p className="text-[11px] text-ink-muted">
+                    Alert reception to prepare invoice for current patient
                   </p>
                 </div>
-              </div>
-
-              {activePatientApt?.prescription && (
-                <button
-                  onClick={() => setPreviewApt(activePatientApt)}
-                  className="px-3 py-1.5 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-xs font-semibold text-ink transition-colors flex items-center gap-1"
-                >
-                  <span>Preview PDF</span>
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Diagnosis Input */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-ink-muted font-display uppercase tracking-wider">
-                Clinical Diagnosis &amp; Symptoms
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Acute Irreversible Pulpitis, Root Canal post-op check, Gingivitis"
-                value={rxDiagnosis}
-                onChange={(e) => setRxDiagnosis(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl border border-line bg-surface-2 text-xs font-medium text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-signal"
-              />
-            </div>
-
-            {/* Quick Presets */}
-            <div className="space-y-1.5">
-              <span className="text-[11px] font-bold text-ink-muted font-display uppercase tracking-wider">
-                1-Tap Common Presets:
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleAddPresetMedicine({
-                      name: "Amoxicillin 500mg",
-                      dosage: "500 mg",
-                      freq: "1-0-1 (After Food)",
-                      dur: "5 Days",
-                      notes: "Antibiotic course",
-                    })
-                  }
-                  className="px-2.5 py-1 rounded-lg bg-surface-2 hover:bg-signal/10 hover:text-signal text-[11px] font-medium border border-line transition-colors"
-                >
-                  + Amoxicillin 500mg
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleAddPresetMedicine({
-                      name: "Paracetamol 650mg",
-                      dosage: "650 mg",
-                      freq: "1-0-1 (SOS / Pain)",
-                      dur: "3 Days",
-                      notes: "For fever/pain",
-                    })
-                  }
-                  className="px-2.5 py-1 rounded-lg bg-surface-2 hover:bg-signal/10 hover:text-signal text-[11px] font-medium border border-line transition-colors"
-                >
-                  + Paracetamol 650mg
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleAddPresetMedicine({
-                      name: "Chlorhexidine Mouthwash 0.2%",
-                      dosage: "10 ml",
-                      freq: "0-0-1 (Night)",
-                      dur: "7 Days",
-                      notes: "Rinse for 60 seconds",
-                    })
-                  }
-                  className="px-2.5 py-1 rounded-lg bg-surface-2 hover:bg-signal/10 hover:text-signal text-[11px] font-medium border border-line transition-colors"
-                >
-                  + Chlorhexidine Mouthwash
-                </button>
-              </div>
-            </div>
-
-            {/* Medicines List */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-ink-muted font-display uppercase tracking-wider">
-                  Prescribed Medications
-                </label>
-                <button
-                  type="button"
-                  onClick={handleAddMedicine}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-signal hover:underline"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Add Medicine</span>
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {rxMedicines.map((med, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-2xl border border-line bg-surface-2/60 space-y-2"
-                  >
-                    <div className="grid grid-cols-12 gap-2">
-                      <div className="col-span-6 sm:col-span-5">
-                        <input
-                          type="text"
-                          placeholder="Medicine Name (e.g. Augmentin 625)"
-                          value={med.name}
-                          onChange={(e) => {
-                            const updated = [...rxMedicines];
-                            updated[idx].name = e.target.value;
-                            setRxMedicines(updated);
-                          }}
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-surface-1 text-xs font-semibold text-ink focus:outline-none focus:ring-1 focus:ring-signal"
-                        />
-                      </div>
-
-                      <div className="col-span-6 sm:col-span-3">
-                        <input
-                          type="text"
-                          placeholder="Dosage (500mg)"
-                          value={med.dosage}
-                          onChange={(e) => {
-                            const updated = [...rxMedicines];
-                            updated[idx].dosage = e.target.value;
-                            setRxMedicines(updated);
-                          }}
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-surface-1 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-signal"
-                        />
-                      </div>
-
-                      <div className="col-span-6 sm:col-span-2">
-                        <input
-                          type="text"
-                          placeholder="Duration (5 Days)"
-                          value={med.duration}
-                          onChange={(e) => {
-                            const updated = [...rxMedicines];
-                            updated[idx].duration = e.target.value;
-                            setRxMedicines(updated);
-                          }}
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-surface-1 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-signal"
-                        />
-                      </div>
-
-                      <div className="col-span-6 sm:col-span-2 flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMedicine(idx)}
-                          className="p-1.5 rounded-lg text-ink-muted hover:text-coral hover:bg-coral/10 transition-colors"
-                          title="Remove medicine"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-12 gap-2">
-                      <div className="col-span-6">
-                        <input
-                          type="text"
-                          placeholder="Frequency (e.g. 1-0-1 After Food)"
-                          value={med.frequency}
-                          onChange={(e) => {
-                            const updated = [...rxMedicines];
-                            updated[idx].frequency = e.target.value;
-                            setRxMedicines(updated);
-                          }}
-                          className="w-full px-2.5 py-1 rounded-lg border border-line bg-surface-1 text-[11px] text-ink focus:outline-none"
-                        />
-                      </div>
-                      <div className="col-span-6">
-                        <input
-                          type="text"
-                          placeholder="Special instructions (e.g. with warm water)"
-                          value={med.notes || ""}
-                          onChange={(e) => {
-                            const updated = [...rxMedicines];
-                            updated[idx].notes = e.target.value;
-                            setRxMedicines(updated);
-                          }}
-                          className="w-full px-2.5 py-1 rounded-lg border border-line bg-surface-1 text-[11px] text-ink focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Doctor Advice */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-ink-muted font-display uppercase tracking-wider">
-                Doctor Advice &amp; Instructions
-              </label>
-              <textarea
-                rows={2}
-                placeholder="e.g. Warm saline rinses 3 times a day. Avoid hard foods on the left side for 48 hours."
-                value={rxAdvice}
-                onChange={(e) => setRxAdvice(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl border border-line bg-surface-2 text-xs font-medium text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-signal resize-none"
-              />
-            </div>
-
-            {/* Actions: Sign & Issue */}
-            <div className="pt-3 border-t border-line flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-ink-muted">
-                <CheckCircle2 className="h-4 w-4 text-mint" />
-                <span>Digitally signed by <strong>Dr. Ananya Sharma</strong></span>
-              </div>
+                <ChevronRight className="h-4 w-4 text-ink-faint group-hover:text-signal" />
+              </button>
 
               <button
                 type="button"
-                onClick={handleIssuePrescription}
-                disabled={isSavingRx || !activePatientApt}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-hover text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors disabled:opacity-50"
+                onClick={() => handleIntercomAlert("Assistant needed in Chamber 1")}
+                className="w-full p-3 rounded-2xl border border-line bg-surface-2/60 hover:bg-signal/10 hover:border-signal/30 text-left transition-colors flex items-center justify-between group"
               >
-                <FileText className="h-4 w-4" />
-                <span>{isSavingRx ? "Signing & Issuing..." : "Sign & Issue Digital Rx"}</span>
+                <div>
+                  <p className="text-xs font-bold text-ink group-hover:text-signal">
+                    👩‍⚕️ Request Clinical Assistant / Nurse
+                  </p>
+                  <p className="text-[11px] text-ink-muted">
+                    Page available staff to assist in Chamber 1
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-ink-faint group-hover:text-signal" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleIntercomAlert("Chamber sanitization requested")}
+                className="w-full p-3 rounded-2xl border border-line bg-surface-2/60 hover:bg-signal/10 hover:border-signal/30 text-left transition-colors flex items-center justify-between group"
+              >
+                <div>
+                  <p className="text-xs font-bold text-ink group-hover:text-signal">
+                    ✨ Request Chamber Sanitization
+                  </p>
+                  <p className="text-[11px] text-ink-muted">
+                    Clean and prepare operatory before calling next patient
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-ink-faint group-hover:text-signal" />
               </button>
             </div>
           </div>
+
+          {/* Follow-up Recall Navigation Card */}
+          <div className="bg-surface-1 border border-line rounded-3xl p-5 shadow-card space-y-3">
+            <div className="flex items-center gap-2">
+              <BellRing className="h-4 w-4 text-signal" />
+              <h4 className="text-xs font-bold uppercase tracking-wider text-ink-muted font-display">
+                Follow-ups &amp; Recalls
+              </h4>
+            </div>
+            <p className="text-xs text-ink-muted leading-relaxed">
+              Need to recall this patient in 7 days, 14 days, or 1 month? Clinic follow-ups are coordinated through the front-desk recall workflow.
+            </p>
+            <Link
+              href="/followups"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-signal hover:underline"
+            >
+              <span>View Clinic Recall System &rarr;</span>
+            </Link>
+          </div>
         </div>
       </div>
-
-      {/* Prescription Viewer Modal Preview */}
-      <PrescriptionViewerModal
-        isOpen={!!previewApt}
-        onClose={() => setPreviewApt(null)}
-        appointment={previewApt}
-      />
     </div>
   );
 }

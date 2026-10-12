@@ -122,7 +122,7 @@ export const LiveQueueBadge: React.FC<LiveQueueBadgeProps> = ({
         </div>
       ) : isPast ? (
         <div className="text-[11px] text-ink-muted text-center">
-          Consultation completed. View prescription and notes below.
+          Consultation completed. Thank you for visiting.
         </div>
       ) : (
         <div className="text-[11px] text-ink-muted text-center flex items-center justify-center gap-1">

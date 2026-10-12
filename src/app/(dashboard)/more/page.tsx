@@ -22,7 +22,7 @@ export default function MorePage() {
     {
       title: "Clinic Operations",
       items: [
-        { label: "Doctor Chamber & Rx Pad", href: "/doctor", icon: Stethoscope, badge: "Chamber 1" },
+        { label: "Doctor Chamber & Queue", href: "/doctor", icon: Stethoscope, badge: "Chamber 1" },
         { label: "Follow-ups & Recalls", href: "/followups", icon: BellRing, badge: "5 Due" },
         { label: "Lab Reports & PDFs", href: "/reports", icon: FileText },
         { label: "Services & Pricing", href: "/more#services", icon: Stethoscope },
@@ -52,7 +52,7 @@ export default function MorePage() {
 
       {/* Switch to Patient Portal Card */}
       <Link
-        href="/"
+        href="/patient"
         className="flex items-center justify-between p-4 rounded-2xl border border-signal/25 bg-signal/10 hover:bg-signal/15 transition-all group shadow-2xs"
       >
         <div className="flex items-center gap-3">
@@ -64,7 +64,7 @@ export default function MorePage() {
               Switch to Patient Portal
             </h3>
             <p className="text-xs text-ink-soft">
-              Browse verified doctors across India & test patient online booking
+              Browse clinic doctors &amp; test online appointment booking
             </p>
           </div>
         </div>

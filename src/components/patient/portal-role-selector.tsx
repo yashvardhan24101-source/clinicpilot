@@ -103,14 +103,14 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
                   I am a Patient
                 </h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Search top verified doctors across your city, browse treatments for any illness or cause, and book instant appointments.
+                  Schedule appointments with clinic doctors, select visit modes, and track your waiting queue in real time.
                 </p>
               </div>
 
               <div className="pt-2 space-y-2 border-t border-line text-xs text-ink-muted font-medium">
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>Search doctors by symptom &amp; disease</span>
+                  <span>Search clinic doctors by specialty</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
@@ -118,7 +118,7 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>Digital Prescription (Rx) &amp; Lab PDF</span>
+                  <span>Instant WhatsApp confirmation &amp; pass</span>
                 </div>
               </div>
             </div>
@@ -155,7 +155,7 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
                   I am Clinic Staff / Doctor
                 </h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Front-desk operations, doctor chamber calling station, prescription writing pad, and WhatsApp takeover.
+                  Front-desk operations, doctor chamber calling station, schedule time rail, and WhatsApp takeover.
                 </p>
               </div>
 
@@ -166,7 +166,7 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>Doctor Chamber &amp; Digital Rx Pad</span>
+                  <span>Doctor Chamber &amp; Calling Station</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />

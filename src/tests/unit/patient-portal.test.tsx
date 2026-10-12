@@ -72,12 +72,12 @@ describe("Patient Doctor Discovery & Online Booking", () => {
         />
       );
 
-      expect(screen.getByText("All Specialists")).toBeInTheDocument();
-      expect(screen.getByText("Toothache & Cavities")).toBeInTheDocument();
-      expect(screen.getByText("Viral Fever & Cold")).toBeInTheDocument();
-      expect(screen.getByText("Skin Rash & Acne")).toBeInTheDocument();
+      expect(screen.getByText("All Specialties")).toBeInTheDocument();
+      expect(screen.getByText("Dentistry")).toBeInTheDocument();
+      expect(screen.getByText("General Medicine")).toBeInTheDocument();
+      expect(screen.getByText("Dermatology")).toBeInTheDocument();
 
-      fireEvent.click(screen.getByText("Toothache & Cavities"));
+      fireEvent.click(screen.getByText("Dentistry"));
       expect(handleSelectSpecialty).toHaveBeenCalledWith("Dentist");
     });
   });
