@@ -60,8 +60,11 @@ export async function POST(request: Request) {
     console.log(`[REAL-TIME OTP ENGINE] Generated OTP for ${formattedPhone}: ${otpCode}`);
 
     // Check if Fast2SMS API key is provided
-    const fast2smsKey = process.env.FAST2SMS_API_KEY;
+    const fast2smsKey =
+      process.env.FAST2SMS_API_KEY ||
+      "ADFSBQdgEzURpJuWokOMnZ2K3Pq6sTV0Imh4xG1YHlCLeai957b6mcAUutPvNszQMrJTlFpdqeGHoyI4";
     let smsSentViaGateway = false;
+    let gatewayMessage = "";
 
     if (fast2smsKey) {
       try {
@@ -77,9 +80,17 @@ export async function POST(request: Request) {
             numbers: indianNumber,
           }),
         });
-        if (smsRes.ok) {
+        const smsData = (await smsRes.json().catch(() => null)) as {
+          return?: boolean;
+          message?: string;
+          status_code?: number;
+        } | null;
+        console.log(`[Fast2SMS] Response for ${indianNumber}:`, smsData);
+        if (smsData?.return === true) {
           smsSentViaGateway = true;
-          console.log(`[Fast2SMS] Successfully sent real SMS OTP to ${indianNumber}`);
+          gatewayMessage = "Real SMS dispatched via Indian Telecom Carrier!";
+        } else if (smsData?.message) {
+          gatewayMessage = smsData.message;
         }
       } catch (smsErr) {
         console.error("[Fast2SMS] Gateway error:", smsErr);
