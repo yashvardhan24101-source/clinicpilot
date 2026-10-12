@@ -19,11 +19,13 @@ import {
 interface PortalRoleSelectorProps {
   onSelectPatient: () => void;
   onSelectStaff: () => void;
+  onSelectDoctor?: () => void;
 }
 
 export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
   onSelectPatient,
   onSelectStaff,
+  onSelectDoctor,
 }) => {
   const [rememberChoice, setRememberChoice] = useState(false);
 
@@ -39,6 +41,17 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
       localStorage.setItem("clinicpilot_default_portal", "staff");
     }
     onSelectStaff();
+  };
+
+  const handleDoctorClick = () => {
+    if (rememberChoice) {
+      localStorage.setItem("clinicpilot_default_portal", "doctor");
+    }
+    if (onSelectDoctor) {
+      onSelectDoctor();
+    } else {
+      onSelectStaff();
+    }
   };
 
   return (
@@ -62,7 +75,7 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
           </h1>
 
           <p className="text-xs sm:text-sm text-ink-muted max-w-md mx-auto leading-relaxed">
-            Please choose how you would like to access the portal today. You can freely switch anytime.
+            Please choose how you would like to access the portal today. Tailored for Patients, Doctors, and Reception Staff.
           </p>
         </div>
 
@@ -73,7 +86,6 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
             onClick={handlePatientClick}
             className="group relative rounded-3xl border border-line bg-surface-1 p-6 sm:p-8 shadow-card hover:shadow-xl hover:border-signal/50 transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
           >
-            {/* Top accent badge */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-signal opacity-0 group-hover:opacity-100 transition-opacity" />
 
             <div className="space-y-4">
@@ -98,15 +110,15 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
               <div className="pt-2 space-y-2 border-t border-line text-xs text-ink-muted font-medium">
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>Search doctors by symptom & disease</span>
+                  <span>Search doctors by symptom &amp; disease</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>In-Clinic & Video consultation bookings</span>
+                  <span>Live Queue Badge &amp; Token Number</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>Instant digital pass on WhatsApp</span>
+                  <span>Digital Prescription (Rx) &amp; Lab PDF</span>
                 </div>
               </div>
             </div>
@@ -122,12 +134,10 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
             </div>
           </div>
 
-          {/* Card 2: Staff & Clinic Panel */}
+          {/* Card 2: Staff & Clinic Panel (Doctors + Receptionists) */}
           <div
-            onClick={handleStaffClick}
-            className="group relative rounded-3xl border border-line bg-surface-1 p-6 sm:p-8 shadow-card hover:shadow-xl hover:border-mint/50 transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
+            className="group relative rounded-3xl border border-line bg-surface-1 p-6 sm:p-8 shadow-card hover:shadow-xl hover:border-mint/50 transition-all flex flex-col justify-between overflow-hidden"
           >
-            {/* Top accent badge */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-mint opacity-0 group-hover:opacity-100 transition-opacity" />
 
             <div className="space-y-4">
@@ -136,7 +146,7 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
                   <Building2 className="h-7 w-7" />
                 </div>
                 <span className="px-2.5 py-1 rounded-full bg-mint/10 text-mint text-[11px] font-bold font-display uppercase tracking-wider">
-                  Clinic Staff
+                  Clinic &amp; Doctors
                 </span>
               </div>
 
@@ -145,33 +155,43 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
                   I am Clinic Staff / Doctor
                 </h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
-                  Front-desk operations, live vertical time rail with NOW marker, WhatsApp bot takeover, follow-ups, and patient records.
+                  Front-desk operations, doctor chamber calling station, prescription writing pad, and WhatsApp takeover.
                 </p>
               </div>
 
               <div className="pt-2 space-y-2 border-t border-line text-xs text-ink-muted font-medium">
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>Live Vertical Time Rail & Queue</span>
+                  <span>Live Vertical Time Rail &amp; Walk-ins</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>WhatsApp 2-Way Inbox & Bot Takeover</span>
+                  <span>Doctor Chamber &amp; Digital Rx Pad</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-3.5 w-3.5 text-mint shrink-0" />
-                  <span>Patient recall pipeline & Razorpay billing</span>
+                  <span>WhatsApp 2-Way Inbox &amp; Billing</span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-line">
+            <div className="mt-6 pt-4 border-t border-line space-y-2">
               <button
                 type="button"
-                className="w-full py-3 px-4 rounded-xl bg-ink text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm group-hover:bg-ink/90 transition-colors"
+                onClick={handleStaffClick}
+                className="w-full py-3 px-4 rounded-xl bg-ink text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm hover:bg-ink/90 transition-colors"
               >
                 <span>Enter Staff Panel</span>
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDoctorClick}
+                className="w-full py-2 px-3 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-signal font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Stethoscope className="h-3.5 w-3.5" />
+                <span>Or Open Doctor Chamber directly</span>
               </button>
             </div>
           </div>
@@ -189,9 +209,13 @@ export const PortalRoleSelector: React.FC<PortalRoleSelectorProps> = ({
             <span>Remember my selection on this device</span>
           </label>
 
-          <span className="text-[11px] text-ink-faint">
-            You can switch between portals anytime from the top bar.
-          </span>
+          <Link
+            href="/login"
+            className="text-signal hover:underline font-semibold flex items-center gap-1"
+          >
+            <span>Have credentials? Go to Sign In</span>
+            <ArrowRight className="h-3 w-3" />
+          </Link>
         </div>
       </div>
     </div>

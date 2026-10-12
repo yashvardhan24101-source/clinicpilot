@@ -11,6 +11,7 @@ import {
   AlertCircle,
   User,
   Building2,
+  Stethoscope,
   Phone,
   CheckCircle2,
   ArrowRight,
@@ -41,7 +42,7 @@ export default function LoginPage() {
   const [otpSent, setOtpSent] = useState(false);
   const [patientLoading, setPatientLoading] = useState(false);
 
-  // Handle Staff Login
+  // Handle Staff (Hospital & Doctor) Login
   const handleStaffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -53,8 +54,13 @@ export default function LoginPage() {
 
     try {
       await login({ email, password });
-      localStorage.setItem("clinicpilot_default_portal", "staff");
-      router.push("/today");
+      if (email.includes("doctor")) {
+        localStorage.setItem("clinicpilot_default_portal", "doctor");
+        router.push("/doctor");
+      } else {
+        localStorage.setItem("clinicpilot_default_portal", "staff");
+        router.push("/today");
+      }
     } catch {
       setError("Invalid email or password. Please try again.");
     }
@@ -65,7 +71,7 @@ export default function LoginPage() {
     setTimeout(() => setForgotSent(false), 4000);
   };
 
-  const handleDemoStaffLogin = async (staffRole: string) => {
+  const handleDemoStaffLogin = async (staffRole: "receptionist" | "doctor" | "owner") => {
     setError(null);
     const demoEmails: Record<string, string> = {
       receptionist: "reception@smilecraft.in",
@@ -74,8 +80,13 @@ export default function LoginPage() {
     };
     try {
       await login({ email: demoEmails[staffRole], password: "demo123" });
-      localStorage.setItem("clinicpilot_default_portal", "staff");
-      router.push("/today");
+      if (staffRole === "doctor") {
+        localStorage.setItem("clinicpilot_default_portal", "doctor");
+        router.push("/doctor");
+      } else {
+        localStorage.setItem("clinicpilot_default_portal", "staff");
+        router.push("/today");
+      }
     } catch {
       setError("Demo login failed. Please try again.");
     }
@@ -111,15 +122,19 @@ export default function LoginPage() {
 
     setPatientLoading(true);
     setTimeout(() => {
-      const patientData = {
-        name: "Aarav Mehta",
-        phone: patientPhone.startsWith("+91") ? patientPhone : `+91 ${patientPhone}`,
-        verified: true,
-      };
-      localStorage.setItem("clinicpilot_current_patient", JSON.stringify(patientData));
-      localStorage.setItem("clinicpilot_default_portal", "patient");
-      setPatientLoading(false);
-      router.push("/");
+      try {
+        const patientData = {
+          name: "Aarav Mehta",
+          phone: patientPhone.startsWith("+91") ? patientPhone : `+91 ${patientPhone}`,
+          verified: true,
+        };
+        localStorage.setItem("clinicpilot_current_patient", JSON.stringify(patientData));
+        localStorage.setItem("clinicpilot_default_portal", "patient");
+        setPatientLoading(false);
+        router.push("/");
+      } catch (err) {
+        console.error(err);
+      }
     }, 500);
   };
 
@@ -153,11 +168,11 @@ export default function LoginPage() {
             </h1>
           </Link>
           <p className="text-xs text-ink-muted">
-            Healthcare Operations & Patient Appointment System
+            Healthcare Operations &amp; Patient Appointment System
           </p>
         </div>
 
-        {/* Role Selector Tabs: Patient vs Staff */}
+        {/* Role Selector Tabs: Patient vs Clinic Staff */}
         <div className="grid grid-cols-2 p-1 rounded-2xl bg-surface-2 border border-line shadow-2xs">
           <button
             type="button"
@@ -201,7 +216,7 @@ export default function LoginPage() {
                   Patient Portal Login
                 </h2>
                 <p className="text-xs text-ink-muted">
-                  Log in to track appointments and access digital passes
+                  Log in to track appointments, live tokens, and digital passes
                 </p>
               </div>
 
@@ -309,7 +324,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Link to skip login and browse freely */}
+            {/* Link to browse freely */}
             <div className="text-center">
               <Link
                 href="/"
@@ -322,7 +337,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* ================= STAFF LOGIN ================= */}
+        {/* ================= STAFF & DOCTOR LOGIN ================= */}
         {role === "staff" && (
           <div className="space-y-4">
             <form onSubmit={handleStaffSubmit} className="space-y-4">
@@ -332,7 +347,7 @@ export default function LoginPage() {
                     Clinic Staff &amp; Doctor Login
                   </h2>
                   <p className="text-xs text-ink-muted">
-                    Sign in to your clinic front-desk operations dashboard
+                    Sign in to your clinic front-desk operations dashboard or doctor chamber
                   </p>
                 </div>
 
@@ -353,21 +368,29 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="reception@smilecraft.in"
+                    placeholder="reception@smilecraft.in or doctor@smilecraft.in"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    autoComplete="email"
                     required
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label
-                    htmlFor="password"
-                    className="text-xs font-bold text-ink-muted font-display uppercase tracking-wider"
-                  >
-                    Password
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="password"
+                      className="text-xs font-bold text-ink-muted font-display uppercase tracking-wider"
+                    >
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      className="text-[11px] text-signal hover:underline"
+                    >
+                      Forgot?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Input
                       id="password"
@@ -375,14 +398,12 @@ export default function LoginPage() {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      autoComplete="current-password"
-                      className="pr-10"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-3 text-ink-faint hover:text-ink transition-colors"
+                      className="absolute right-3 top-2.5 text-ink-faint hover:text-ink transition-colors"
                       tabIndex={-1}
                     >
                       {showPassword ? (
@@ -401,64 +422,57 @@ export default function LoginPage() {
                   size="lg"
                 >
                   <LogIn className="h-4 w-4" />
-                  <span>{isLoading ? "Signing in..." : "Sign In to Staff Panel"}</span>
+                  <span>{isLoading ? "Signing in..." : "Sign in to Dashboard"}</span>
                 </Button>
 
-                <div className="text-center">
-                  <button
-                    type="button"
-                    onClick={handleForgotPassword}
-                    className="text-xs text-signal hover:underline font-medium"
-                  >
-                    {forgotSent ? "✓ Reset link sent to your email" : "Forgot password?"}
-                  </button>
+                {/* 1-Tap Demo Staff Logins */}
+                <div className="pt-2 border-t border-line space-y-1.5">
+                  <span className="text-[10px] font-bold text-ink-muted uppercase tracking-wider font-display block">
+                    Quick 1-Tap Demo Logins:
+                  </span>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleDemoStaffLogin("receptionist")}
+                      className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-ink text-center transition-colors"
+                    >
+                      <span>Reception</span>
+                      <span className="block text-[9px] text-ink-muted font-normal">
+                        Priya
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDemoStaffLogin("doctor")}
+                      className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-signal text-center transition-colors"
+                    >
+                      <span>Doctor</span>
+                      <span className="block text-[9px] text-ink-muted font-normal">
+                        Dr. Ananya
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDemoStaffLogin("owner")}
+                      className="p-2 rounded-xl border border-line bg-surface-2 hover:bg-surface-3 text-[11px] font-bold text-ink text-center transition-colors"
+                    >
+                      <span>Owner</span>
+                      <span className="block text-[9px] text-ink-muted font-normal">
+                        Dr. Vikram
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </form>
-
-            {/* Quick Demo Staff Buttons */}
-            <div className="space-y-2.5">
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-line" />
-                <span className="text-[11px] text-ink-faint font-semibold uppercase tracking-wider font-display">
-                  Quick Staff Demo
-                </span>
-                <div className="flex-1 h-px bg-line" />
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleDemoStaffLogin("receptionist")}
-                  className="flex flex-col items-center gap-1 p-3 rounded-2xl border border-line bg-surface-1 text-xs font-semibold text-ink-soft hover:bg-signal/10 hover:text-signal hover:border-signal/30 transition-colors shadow-2xs"
-                >
-                  <span className="text-base">🏥</span>
-                  <span>Reception</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoStaffLogin("doctor")}
-                  className="flex flex-col items-center gap-1 p-3 rounded-2xl border border-line bg-surface-1 text-xs font-semibold text-ink-soft hover:bg-signal/10 hover:text-signal hover:border-signal/30 transition-colors shadow-2xs"
-                >
-                  <span className="text-base">🩺</span>
-                  <span>Doctor</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoStaffLogin("owner")}
-                  className="flex flex-col items-center gap-1 p-3 rounded-2xl border border-line bg-surface-1 text-xs font-semibold text-ink-soft hover:bg-signal/10 hover:text-signal hover:border-signal/30 transition-colors shadow-2xs"
-                >
-                  <span className="text-base">👤</span>
-                  <span>Owner</span>
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
-        <p className="text-center text-[11px] text-ink-faint">
-          ClinicPilot v0.1 • Multi-role Authentication
-        </p>
+        {/* Security badge footer */}
+        <div className="text-center text-[11px] text-ink-faint flex items-center justify-center gap-1.5">
+          <ShieldCheck className="h-3.5 w-3.5 text-mint" />
+          <span>256-bit Encrypted Healthcare Session</span>
+        </div>
       </div>
     </div>
   );

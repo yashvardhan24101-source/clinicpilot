@@ -22,6 +22,7 @@ export default function MorePage() {
     {
       title: "Clinic Operations",
       items: [
+        { label: "Doctor Chamber & Rx Pad", href: "/doctor", icon: Stethoscope, badge: "Chamber 1" },
         { label: "Follow-ups & Recalls", href: "/followups", icon: BellRing, badge: "5 Due" },
         { label: "Lab Reports & PDFs", href: "/reports", icon: FileText },
         { label: "Services & Pricing", href: "/more#services", icon: Stethoscope },

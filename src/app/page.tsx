@@ -119,6 +119,7 @@ export default function PatientPortalPage() {
       <PortalRoleSelector
         onSelectPatient={() => setActivePortal("patient")}
         onSelectStaff={() => router.push("/today")}
+        onSelectDoctor={() => router.push("/doctor")}
       />
     );
   }

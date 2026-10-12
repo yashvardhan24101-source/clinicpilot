@@ -15,6 +15,7 @@ import {
   CreditCard,
   Shield,
   Sparkles,
+  Stethoscope,
   ChevronRight,
   HeartPulse,
   ArrowRight,
@@ -33,6 +34,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
 
   const mainLinks = [
     { href: "/today", label: "Today", icon: Clock },
+    { href: "/doctor", label: "Doctor Chamber", icon: Stethoscope },
     { href: "/calendar", label: "Calendar", icon: CalendarDays },
     { href: "/appointments", label: "Appointments", icon: CalendarRange },
     {
