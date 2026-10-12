@@ -86,6 +86,23 @@ export async function POST(request: Request) {
       }
     }
 
+    // Check if 2Factor.in API key is provided (popular Indian SMS gateway)
+    const twoFactorKey = process.env.TWO_FACTOR_API_KEY;
+    if (!smsSentViaGateway && twoFactorKey) {
+      try {
+        const twoFactorRes = await fetch(
+          `https://2factor.in/v1/API/V1/${twoFactorKey}/SMS/+91${indianNumber}/${otpCode}/ClinicPilot+OTP`,
+          { method: "GET" }
+        );
+        if (twoFactorRes.ok) {
+          smsSentViaGateway = true;
+          console.log(`[2Factor.in] Successfully sent real SMS OTP to ${indianNumber}`);
+        }
+      } catch (twoErr) {
+        console.error("[2Factor.in] Gateway error:", twoErr);
+      }
+    }
+
     // Check if Twilio is configured
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioAuth = process.env.TWILIO_AUTH_TOKEN;
