@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E9EFF5" />
+    </linearGradient>
+    <linearGradient id="signalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1F6FEB" />
+      <stop offset="100%" stop-color="#1250B5" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded canvas -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGradient)" stroke="#D6DFE8" stroke-width="8" />
+
+  <!-- Inner signal pulse disc -->
+  <circle cx="256" cy="256" r="160" fill="#EBF3FE" />
+
+  <!-- Signal Cross / Spark Icon -->
+  <g transform="translate(136, 136)">
+    <!-- Vertical bar -->
+    <rect x="96" y="20" width="48" height="200" rx="24" fill="url(#signalGradient)" filter="url(#glow)" />
+    <!-- Horizontal bar -->
+    <rect x="20" y="96" width="200" height="48" rx="24" fill="url(#signalGradient)" filter="url(#glow)" />
+    <!-- Live pulse core -->
+    <circle cx="120" cy="120" r="28" fill="#FFFFFF" />
+    <circle cx="120" cy="120" r="16" fill="#1F6FEB" />
+  </g>
+
+  <!-- Mint Live Status Indicator dot (top right) -->
+  <circle cx="360" cy="150" r="28" fill="#14B87A" stroke="#FFFFFF" stroke-width="6" />
+</svg>

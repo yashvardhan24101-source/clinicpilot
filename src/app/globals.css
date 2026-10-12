@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Futuristic Light Theme: Clear Signal Tokens */
+  --surface-0: #F5F8FB;       /* Frost: Canvas / App background */
+  --surface-1: #FFFFFF;       /* Pane: Main cards, dialogs, sheets */
+  --surface-2: #E9EFF5;       /* Mist: Inset rails, inputs, hover states */
+  --surface-glass: rgba(255, 255, 255, 0.85);
+
+  --ink: #0D1B2A;             /* Deep ink: Primary text (14.6:1 contrast) */
+  --ink-soft: #4A5B6D;        /* Slate ink: Secondary text (4.9:1 contrast) */
+  --ink-faint: #8898AA;       /* Disabled, placeholder */
+
+  --line: #D6DFE8;            /* 1px borders, time rail tracks */
+  --line-subtle: #E6EDF4;
+
+  --signal: #1F6FEB;          /* Cobalt-teal: Primary actions, live marker */
+  --signal-glow: rgba(31, 111, 235, 0.28);
+  --signal-subtle: #EBF3FE;
+  --signal-hover: #175cd3;
+
+  --ok: #14B87A;              /* Mint: Confirmed, completed */
+  --ok-subtle: #E7F9F2;
+  --ok-foreground: #0A6C45;
+
+  --warn: #F2A31B;            /* Amber: Needs attention, booked */
+  --warn-subtle: #FEF6E9;
+  --warn-foreground: #965B00;
+
+  --alert: #E5484D;           /* Coral: Cancelled, no-show, disconnected */
+  --alert-subtle: #FDECEE;
+  --alert-foreground: #9E1C20;
+
+  --font-sora: "Sora", system-ui, -apple-system, sans-serif;
+  --font-figtree: "Figtree", system-ui, -apple-system, sans-serif;
+  --font-noto-devanagari: "Noto Sans Devanagari", system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  body {
+    background-color: var(--surface-0);
+    color: var(--ink);
+    font-family: var(--font-figtree), var(--font-noto-devanagari), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Sora tabular numbers for clock and counts */
+  .tabular-nums {
+    font-family: var(--font-sora), monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Glassmorphism helpers for top header and bottom tabs */
+.glass-panel {
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: var(--line);
+}
+
+/* Live time rail signature glow */
+.live-signal-halo {
+  box-shadow: 0 0 0 4px var(--signal-glow), 0 0 12px var(--signal-glow);
+}
+
+/* Hide scrollbar on mobile filters while allowing scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Clear Signal FullCalendar Overrides */
+.fc {
+  --fc-border-color: var(--line);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: var(--surface-2);
+  --fc-today-bg-color: var(--signal-subtle);
+  font-family: var(--font-figtree), sans-serif;
+}
+
+.fc .fc-toolbar-title {
+  font-family: var(--font-sora), sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.fc .fc-button-primary {
+  background-color: var(--surface-1);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 6px 12px;
+  text-transform: capitalize;
+  box-shadow: 0 1px 2px rgba(13, 27, 42, 0.04);
+}
+
+.fc .fc-button-primary:hover {
+  background-color: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active {
+  background-color: var(--signal);
+  color: #ffffff;
+  border-color: var(--signal);
+}
+
+.fc .fc-timegrid-slot-label-cushion {
+  font-family: var(--font-sora), monospace;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.fc-theme-standard td, .fc-theme-standard th {
+  border-color: var(--line-subtle);
+}
+
+.fc .fc-col-header-cell-cushion {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 8px 4px;
+}
+
