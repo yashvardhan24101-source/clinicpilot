@@ -94,7 +94,7 @@ export default async function RootHomePage() {
             <div className="h-8 w-8 rounded-lg bg-signal-subtle text-signal flex items-center justify-center">
               <Calendar className="h-4 w-4" />
             </div>
-            <h3 className="text-sm font-semibold text-ink font-display">Live Schedule</h3>
+            <h2 className="text-sm font-semibold text-ink font-display">Live Schedule</h2>
             <p className="text-xs text-ink-soft">
               Real-time time rail with token tracking and open slot booking.
             </p>
@@ -104,7 +104,7 @@ export default async function RootHomePage() {
             <div className="h-8 w-8 rounded-lg bg-ok-subtle text-ok flex items-center justify-center">
               <MessageSquare className="h-4 w-4" />
             </div>
-            <h3 className="text-sm font-semibold text-ink font-display">WhatsApp Inbox</h3>
+            <h2 className="text-sm font-semibold text-ink font-display">WhatsApp Inbox</h2>
             <p className="text-xs text-ink-soft">
               Two-way messaging with AI assistance and seamless staff takeover.
             </p>
@@ -114,7 +114,7 @@ export default async function RootHomePage() {
             <div className="h-8 w-8 rounded-lg bg-warn-subtle text-warn flex items-center justify-center">
               <Send className="h-4 w-4" />
             </div>
-            <h3 className="text-sm font-semibold text-ink font-display">1-Tap Reports</h3>
+            <h2 className="text-sm font-semibold text-ink font-display">1-Tap Reports</h2>
             <p className="text-xs text-ink-soft">
               Deliver lab reports and post-visit recall notices directly to WhatsApp.
             </p>
