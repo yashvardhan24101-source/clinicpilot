@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Doctor, Appointment } from "@/types/api";
 import { api } from "@/lib/api";
+import { getClinicTodayIST } from "@/lib/date-helpers";
 import { LiveQueueBadge } from "./live-queue-badge";
 import {
   X,
@@ -44,7 +45,7 @@ export const PatientBookingModal: React.FC<PatientBookingModalProps> = ({
   const tomorrow = new Date(Date.now() + 86400000);
   const dayAfter = new Date(Date.now() + 172800000);
 
-  const formatDateYMD = (d: Date) => d.toISOString().split("T")[0];
+  const formatDateYMD = (d: Date) => getClinicTodayIST(d);
   const formatDateLabel = (d: Date) =>
     d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
 

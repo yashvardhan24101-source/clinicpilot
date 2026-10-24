@@ -2,6 +2,7 @@ export type UserRole = "owner" | "receptionist" | "doctor" | "super_admin";
 
 export interface UserSession {
   id: string;
+  user_id?: string;
   name: string;
   email: string;
   role: UserRole;

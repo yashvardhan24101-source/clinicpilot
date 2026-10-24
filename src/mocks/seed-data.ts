@@ -7,6 +7,7 @@ import {
   FollowUp,
   LabReport,
 } from "@/types/api";
+import { getClinicTodayIST, getRelativeDateIST } from "@/lib/date-helpers";
 
 export const MOCK_DOCTORS: Doctor[] = [
   {
@@ -303,7 +304,7 @@ export const MOCK_PATIENTS: Patient[] = [
   },
 ];
 
-const todayDate = new Date().toISOString().split("T")[0];
+const todayDate = getClinicTodayIST();
 
 export const MOCK_APPOINTMENTS: Appointment[] = [
   {
@@ -895,8 +896,8 @@ export const MOCK_FOLLOWUPS: FollowUp[] = [
     patient_name: "Rajesh Kumar",
     patient_phone: "+91 98765 43210",
     service_name: "Root Canal Treatment - Sitting 2",
-    last_visit_date: "2026-10-12",
-    due_date: "2026-10-16",
+    last_visit_date: getRelativeDateIST(-1),
+    due_date: getRelativeDateIST(3),
     status: "due",
   },
   {
@@ -905,8 +906,8 @@ export const MOCK_FOLLOWUPS: FollowUp[] = [
     patient_name: "Pooja Gupta",
     patient_phone: "+91 97112 33445",
     service_name: "Braces Wire Retension Check",
-    last_visit_date: "2026-10-12",
-    due_date: "2026-11-12",
+    last_visit_date: getRelativeDateIST(-1),
+    due_date: getRelativeDateIST(30),
     status: "due",
   },
   {
@@ -915,8 +916,8 @@ export const MOCK_FOLLOWUPS: FollowUp[] = [
     patient_name: "Mohammad Zaid",
     patient_phone: "+91 99345 67890",
     service_name: "6-Month Dental Scaling Recall",
-    last_visit_date: "2026-04-10",
-    due_date: "2026-10-12",
+    last_visit_date: getRelativeDateIST(-180),
+    due_date: getRelativeDateIST(0),
     status: "due",
   },
   {
@@ -925,8 +926,8 @@ export const MOCK_FOLLOWUPS: FollowUp[] = [
     patient_name: "Vikramaditya Rao",
     patient_phone: "+91 98860 99887",
     service_name: "Post-Whitening Enamel Polish",
-    last_visit_date: "2026-09-12",
-    due_date: "2026-10-14",
+    last_visit_date: getRelativeDateIST(-30),
+    due_date: getRelativeDateIST(1),
     status: "due",
   },
   {
@@ -935,8 +936,8 @@ export const MOCK_FOLLOWUPS: FollowUp[] = [
     patient_name: "Neha Joshi",
     patient_phone: "+91 97234 44556",
     service_name: "Cavity Restoration Followup",
-    last_visit_date: "2026-09-05",
-    due_date: "2026-10-15",
+    last_visit_date: getRelativeDateIST(-35),
+    due_date: getRelativeDateIST(2),
     status: "due",
   },
 ];
@@ -950,7 +951,7 @@ export const MOCK_LAB_REPORTS: LabReport[] = [
     category: "x_ray",
     file_name: "rajesh_kumar_opg_panoramic.pdf",
     file_size: "2.4 MB",
-    uploaded_at: "2026-10-12",
+    uploaded_at: getClinicTodayIST(),
     sent_to_whatsapp: true,
   },
   {
@@ -961,7 +962,7 @@ export const MOCK_LAB_REPORTS: LabReport[] = [
     category: "x_ray",
     file_name: "sunita_devi_bitewing_molar.pdf",
     file_size: "1.1 MB",
-    uploaded_at: "2026-10-11",
+    uploaded_at: getRelativeDateIST(-1),
     sent_to_whatsapp: false,
   },
   {
@@ -972,7 +973,7 @@ export const MOCK_LAB_REPORTS: LabReport[] = [
     category: "scan",
     file_name: "pooja_gupta_cephalometric_scan.pdf",
     file_size: "3.8 MB",
-    uploaded_at: "2026-10-08",
+    uploaded_at: getRelativeDateIST(-4),
     sent_to_whatsapp: true,
   },
   {
@@ -983,7 +984,7 @@ export const MOCK_LAB_REPORTS: LabReport[] = [
     category: "prescription",
     file_name: "zaid_periodontal_chart_prescription.pdf",
     file_size: "850 KB",
-    uploaded_at: "2026-09-28",
+    uploaded_at: getRelativeDateIST(-14),
     sent_to_whatsapp: true,
   },
 ];

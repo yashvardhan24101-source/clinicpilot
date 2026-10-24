@@ -2,14 +2,41 @@ import { NextResponse } from "next/server";
 import { serverStore } from "@/lib/server-store";
 import { MOCK_DOCTORS, MOCK_SERVICES } from "@/mocks/seed-data";
 import { Appointment, Conversation } from "@/types/api";
+import { requireSession } from "@/lib/auth-guard";
+import { getClinicTodayIST } from "@/lib/date-helpers";
 
 export async function GET(request: Request) {
+  const auth = await requireSession(request);
+  if (auth.errorResponse) return auth.errorResponse;
+
+  const session = auth.session;
+  const clinicId = session.clinic_id;
+  const role = session.role;
+
   const url = new URL(request.url);
   const doctorId = url.searchParams.get("doctor_id");
   const status = url.searchParams.get("status");
   const date = url.searchParams.get("date");
 
   let result = [...serverStore.appointments];
+
+  // Multi-tenant isolation: Super admin sees all, other staff only sees their clinic
+  if (role !== "super_admin") {
+    result = result.filter(
+      (a) => (a.clinic_id || "cln-1") === clinicId
+    );
+  }
+
+  // Requirement 4: Doctors see strictly only their own appointments
+  if (role === "doctor") {
+    const doctorName = session.name || "";
+    const doctorUserId = session.user_id || "";
+    result = result.filter(
+      (a) =>
+        a.doctor_id === doctorUserId ||
+        (doctorName && a.doctor_name.toLowerCase().includes(doctorName.toLowerCase()))
+    );
+  }
 
   if (doctorId && doctorId !== "all") {
     result = result.filter((a) => a.doctor_id === doctorId);
@@ -27,6 +54,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireSession(request);
+  if (auth.errorResponse) return auth.errorResponse;
+
+  const session = auth.session;
+  const clinicId = session.clinic_id;
+
   const body = (await request.json()) as Partial<Appointment>;
   const bookingCode = body.booking_code || `CP-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -36,6 +69,7 @@ export async function POST(request: Request) {
 
   const newAppointment: Appointment = {
     id: `apt-${Date.now()}`,
+    clinic_id: clinicId,
     patient_id: body.patient_id || `pat-${Date.now()}`,
     patient_name: body.patient_name || "Online Patient",
     patient_phone: body.patient_phone || "+91 99999 00000",
@@ -43,7 +77,7 @@ export async function POST(request: Request) {
     doctor_name: body.doctor_name || MOCK_DOCTORS[0].name,
     service_id: body.service_id || MOCK_SERVICES[0].id,
     service_name: body.service_name || "General Consultation",
-    date: body.date || new Date().toISOString().split("T")[0],
+    date: body.date || getClinicTodayIST(),
     start_time: body.start_time || "11:00",
     end_time: body.end_time || "11:30",
     status: body.status || "booked",

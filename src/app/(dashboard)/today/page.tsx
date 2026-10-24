@@ -11,41 +11,125 @@ import {
   UserX,
   Calendar,
   Sparkles,
+  WifiOff,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TimeRail } from "@/components/today/time-rail";
 import { QuickBookSheet } from "@/components/today/quick-book-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { formatDateDisplay } from "@/lib/utils";
+import { formatClinicDateDisplay, getClinicTodayIST, getClinicTimeDisplayIST } from "@/lib/date-helpers";
 import { Appointment, AppointmentStatus } from "@/types/api";
-import { offlineQueue } from "@/lib/offline-queue";
+import { useAuth } from "@/lib/auth-context";
+import { saveTodaySnapshot, getTodaySnapshot } from "@/lib/offline-snapshot";
 
 export default function TodayPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [selectedDoctor, setSelectedDoctor] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isQuickBookOpen, setIsQuickBookOpen] = useState(false);
   const [quickBookDefaultTime, setQuickBookDefaultTime] = useState<string>("11:00");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  // Network offline status and last synced timestamp
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>(() => getClinicTimeDisplayIST());
+  const [snapshotAppointments, setSnapshotAppointments] = useState<Appointment[] | null>(null);
 
-  // Fetch appointments with 10-second polling for live reception updates
+  // Strictly use IST date helper; no toISOString().split("T")[0]
+  const todayStr = getClinicTodayIST();
+
+  // Listen to browser online / offline state
+  useEffect(() => {
+    const handleOnlineEvent = () => setIsOnline(true);
+    const handleOfflineEvent = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnlineEvent);
+    window.addEventListener("offline", handleOfflineEvent);
+
+    return () => {
+      window.removeEventListener("online", handleOnlineEvent);
+      window.removeEventListener("offline", handleOfflineEvent);
+    };
+  }, []);
+
+  // Fetch appointments for today with 10-second polling for live reception updates
   const {
-    data: appointments = [],
+    data: liveAppointments = [],
     isLoading,
+    isError,
     refetch,
+    dataUpdatedAt,
   } = useQuery({
     queryKey: ["appointments", selectedDoctor, statusFilter, todayStr],
-    queryFn: () =>
-      api.getAppointments({
+    queryFn: async () => {
+      const data = await api.getAppointments({
         doctor_id: selectedDoctor,
         status: statusFilter,
         date: todayStr,
-      }),
+      });
+      const syncTime = getClinicTimeDisplayIST();
+      setLastSyncedTime(syncTime);
+
+      // Save minimal snapshot in IndexedDB
+      const activeUserId = user?.user_id || user?.id;
+      if (user?.clinic_id && activeUserId) {
+        saveTodaySnapshot(user.clinic_id, activeUserId, todayStr, data, syncTime).catch(() => {});
+      }
+
+      return data;
+    },
     refetchInterval: 10000,
   });
+
+  // When offline or in error, load minimal snapshot from IndexedDB
+  useEffect(() => {
+    const activeUserId = user?.user_id || user?.id;
+    if ((!isOnline || isError) && user?.clinic_id && activeUserId) {
+      getTodaySnapshot(user.clinic_id, activeUserId, todayStr).then((snapshot) => {
+        if (snapshot && snapshot.appointments.length > 0) {
+          const mapped: Appointment[] = snapshot.appointments.map((a) => ({
+            id: a.id,
+            clinic_id: snapshot.clinic_id,
+            patient_id: `offline-${a.id}`,
+            patient_name: a.patient_name_or_initials,
+            patient_phone: "", // Strictly never stored
+            doctor_id: "doc-1",
+            doctor_name: a.doctor,
+            service_id: "srv-1",
+            service_name: a.service,
+            date: snapshot.date,
+            start_time: a.time,
+            end_time: a.time,
+            status: a.status,
+            source: "walkin",
+            created_at: snapshot.synced_at,
+            updated_at: snapshot.synced_at,
+          }));
+          setSnapshotAppointments(mapped);
+          if (snapshot.synced_time_display) {
+            setLastSyncedTime(snapshot.synced_time_display);
+          }
+        }
+      });
+    } else if (isOnline && !isError) {
+      setSnapshotAppointments(null);
+    }
+  }, [isOnline, isError, user?.clinic_id, user?.user_id, user?.id, todayStr]);
+
+  // Use snapshot when offline/error and snapshot exists
+  const appointments = (!isOnline || isError) && snapshotAppointments ? snapshotAppointments : liveAppointments;
+
+  // Update last synced time on query data refresh
+  useEffect(() => {
+    if (dataUpdatedAt) {
+      setLastSyncedTime(getClinicTimeDisplayIST(new Date(dataUpdatedAt)));
+    }
+  }, [dataUpdatedAt]);
 
   const { data: doctors = [] } = useQuery({
     queryKey: ["doctors"],
@@ -57,41 +141,17 @@ export default function TodayPage() {
     queryFn: () => api.getServices(),
   });
 
-  // Background sync handler for offline queue flush
-  useEffect(() => {
-    const handleOnline = async () => {
-      const pendingQueue = offlineQueue.getQueue();
-      if (pendingQueue.length === 0) return;
-
-      for (const item of pendingQueue) {
-        try {
-          await api.updateAppointmentStatus(item.appointment_id, item.status);
-          offlineQueue.remove(item.id);
-        } catch (e) {
-          console.error("Failed to sync queued action", e);
-        }
-      }
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
-    };
-
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, [queryClient]);
-
-  // Optimistic Mutation for Appointment Status Updates
+  // Mutation for Appointment Status Updates (disabled when offline)
   const statusMutation = useMutation({
     mutationFn: async ({ id, newStatus }: { id: string; newStatus: AppointmentStatus }) => {
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        offlineQueue.enqueue(id, newStatus);
-        return { id, status: newStatus };
+      if (!isOnline) {
+        throw new Error("You are offline. Actions are unavailable until you reconnect.");
       }
       return api.updateAppointmentStatus(id, newStatus);
     },
     onMutate: async ({ id, newStatus }) => {
-      // Cancel outgoing refetches so they don't overwrite optimistic update
       await queryClient.cancelQueries({ queryKey: ["appointments"] });
 
-      // Snapshot previous value
       const previousAppointments = queryClient.getQueryData<Appointment[]>([
         "appointments",
         selectedDoctor,
@@ -99,7 +159,6 @@ export default function TodayPage() {
         todayStr,
       ]);
 
-      // Optimistically update cache
       if (previousAppointments) {
         queryClient.setQueryData<Appointment[]>(
           ["appointments", selectedDoctor, statusFilter, todayStr],
@@ -126,17 +185,30 @@ export default function TodayPage() {
 
   // Mutation for creating a new appointment
   const createMutation = useMutation({
-    mutationFn: (newApt: Partial<Appointment>) => api.createAppointment(newApt),
+    mutationFn: (newApt: Partial<Appointment>) => {
+      if (!isOnline) {
+        throw new Error("You are offline. Actions are unavailable until you reconnect.");
+      }
+      return api.createAppointment(newApt);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
     },
   });
 
   const handleStatusChange = (id: string, newStatus: AppointmentStatus) => {
+    if (!isOnline) {
+      alert("You're offline. Actions are unavailable until you reconnect.");
+      return;
+    }
     statusMutation.mutate({ id, newStatus });
   };
 
   const handleOpenQuickBook = (slotTime?: string) => {
+    if (!isOnline) {
+      alert("You're offline. Actions are unavailable until you reconnect.");
+      return;
+    }
     if (slotTime) {
       setQuickBookDefaultTime(slotTime);
     }
@@ -149,7 +221,7 @@ export default function TodayPage() {
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  // Metrics calculation
+  // Metrics calculation: exactly matching the appointment list
   const totalBooked = appointments.filter((a) => a.status === "booked").length;
   const totalArrived = appointments.filter((a) => a.status === "arrived").length;
   const totalCompleted = appointments.filter((a) => a.status === "completed").length;
@@ -157,18 +229,37 @@ export default function TodayPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-4 space-y-5">
+      {/* Offline Alert Banner */}
+      {!isOnline && (
+        <div
+          data-testid="offline-banner"
+          className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-900 flex items-center justify-between text-xs"
+        >
+          <div className="flex items-center gap-2">
+            <WifiOff className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>
+              You&apos;re offline. Showing the schedule from {lastSyncedTime}. Actions are unavailable until you reconnect.
+            </span>
+          </div>
+          <span className="text-[11px] text-amber-800 shrink-0 font-medium">
+            Last synced: {lastSyncedTime}
+          </span>
+        </div>
+      )}
+
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-ink-soft text-xs font-semibold uppercase tracking-wider font-display">
             <Calendar className="h-3.5 w-3.5 text-signal" />
-            <span>{formatDateDisplay(todayStr)}</span>
+            <span data-testid="today-date-display">{formatClinicDateDisplay(todayStr)}</span>
             <button
               onClick={handleManualRefresh}
-              className="ml-1 text-ink-faint hover:text-signal transition-colors p-1"
+              aria-label="Refresh schedule"
               title="Refresh schedule"
+              className="ml-1 text-ink-soft hover:text-signal transition-colors min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg focus-visible:ring-2 focus-visible:ring-signal"
             >
-              <RefreshCw className={`h-3 w-3 ${isRefreshing ? "animate-spin text-signal" : ""}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-signal" : ""}`} />
             </button>
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-ink font-display mt-0.5">
@@ -186,8 +277,9 @@ export default function TodayPage() {
         </Button>
       </div>
 
-      {/* Metric Counters */}
+      {/* Metric Counters: Skeletons shown during isLoading (NEVER flash 0) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {/* Booked */}
         <div
           onClick={() => setStatusFilter(statusFilter === "booked" ? "all" : "booked")}
           className={`cursor-pointer rounded-xl p-3 border transition-all ${
@@ -200,11 +292,16 @@ export default function TodayPage() {
             <span className="font-medium">Booked</span>
             <Clock className="h-3.5 w-3.5 text-warn" />
           </div>
-          <div className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
-            {totalBooked}
-          </div>
+          {isLoading ? (
+            <Skeleton data-testid="counter-skeleton" className="mt-1 h-7 w-12 rounded-md" />
+          ) : (
+            <div data-testid="count-booked" className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
+              {totalBooked}
+            </div>
+          )}
         </div>
 
+        {/* In Clinic (Arrived) */}
         <div
           onClick={() => setStatusFilter(statusFilter === "arrived" ? "all" : "arrived")}
           className={`cursor-pointer rounded-xl p-3 border transition-all ${
@@ -217,11 +314,16 @@ export default function TodayPage() {
             <span className="font-medium">In Clinic (Arrived)</span>
             <UserCheck className="h-3.5 w-3.5 text-ok" />
           </div>
-          <div className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
-            {totalArrived}
-          </div>
+          {isLoading ? (
+            <Skeleton data-testid="counter-skeleton" className="mt-1 h-7 w-12 rounded-md" />
+          ) : (
+            <div data-testid="count-arrived" className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
+              {totalArrived}
+            </div>
+          )}
         </div>
 
+        {/* Completed */}
         <div
           onClick={() => setStatusFilter(statusFilter === "completed" ? "all" : "completed")}
           className={`cursor-pointer rounded-xl p-3 border transition-all ${
@@ -234,11 +336,16 @@ export default function TodayPage() {
             <span className="font-medium">Completed</span>
             <CheckCircle2 className="h-3.5 w-3.5 text-ok" />
           </div>
-          <div className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
-            {totalCompleted}
-          </div>
+          {isLoading ? (
+            <Skeleton data-testid="counter-skeleton" className="mt-1 h-7 w-12 rounded-md" />
+          ) : (
+            <div data-testid="count-completed" className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
+              {totalCompleted}
+            </div>
+          )}
         </div>
 
+        {/* No-Show */}
         <div
           onClick={() => setStatusFilter(statusFilter === "no_show" ? "all" : "no_show")}
           className={`cursor-pointer rounded-xl p-3 border transition-all ${
@@ -251,9 +358,13 @@ export default function TodayPage() {
             <span className="font-medium">No-Show</span>
             <UserX className="h-3.5 w-3.5 text-alert" />
           </div>
-          <div className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
-            {totalNoShow}
-          </div>
+          {isLoading ? (
+            <Skeleton data-testid="counter-skeleton" className="mt-1 h-7 w-12 rounded-md" />
+          ) : (
+            <div data-testid="count-no-show" className="mt-1 text-2xl font-bold font-display tabular-nums text-ink">
+              {totalNoShow}
+            </div>
+          )}
         </div>
       </div>
 
@@ -292,7 +403,7 @@ export default function TodayPage() {
         })}
       </div>
 
-      {/* THE LIVE TIME RAIL */}
+      {/* THE LIVE TIME RAIL CONTAINER */}
       <div className="bg-surface-1 rounded-2xl border border-line shadow-subtle p-4 sm:p-6 overflow-hidden">
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-line-subtle">
           <div className="flex items-center gap-2">
@@ -306,24 +417,71 @@ export default function TodayPage() {
           </span>
         </div>
 
-        {isLoading ? (
-          <div className="space-y-4 py-4">
-            <Skeleton className="h-16 w-full rounded-xl" />
-            <Skeleton className="h-16 w-full rounded-xl" />
-            <Skeleton className="h-16 w-full rounded-xl" />
+        {/* 1. ERROR STATE CARD */}
+        {isError ? (
+          <div
+            data-testid="error-card"
+            className="py-10 px-4 text-center rounded-xl bg-alert-subtle/40 border border-alert/30 space-y-3"
+          >
+            <div className="w-10 h-10 rounded-full bg-alert-subtle mx-auto flex items-center justify-center text-alert">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-ink font-display">
+                Unable to load today&apos;s schedule
+              </p>
+              <p className="text-xs text-ink-soft mt-1">
+                Please check your network connection or try refreshing.
+              </p>
+            </div>
+            <Button
+              onClick={() => refetch()}
+              variant="outline"
+              size="sm"
+              className="gap-2 border-line hover:bg-surface-2"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Try again</span>
+            </Button>
+          </div>
+        ) : isLoading ? (
+          /* 2. LOADING STATE SKELETONS */
+          <div data-testid="rail-loading-skeleton" className="space-y-4 py-4">
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
           </div>
         ) : appointments.length > 0 ? (
+          /* 3. POPULATED STATE TIME RAIL */
           <TimeRail
             appointments={appointments}
             onStatusChange={handleStatusChange}
             onOpenQuickBook={handleOpenQuickBook}
+            selectedDoctor={selectedDoctor}
+            isToday={true}
           />
         ) : (
-          <div className="py-12 text-center space-y-2">
-            <p className="text-sm font-medium text-ink">No appointments found.</p>
-            <p className="text-xs text-ink-soft">
-              Tap &ldquo;New Appointment&rdquo; to add a booking.
-            </p>
+          /* 4. EMPTY STATE CARD */
+          <div data-testid="empty-schedule-card" className="py-12 px-4 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-signal-subtle mx-auto flex items-center justify-center text-signal">
+              <Calendar className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-ink font-display">
+                No appointments today. Tap an open slot to book one.
+              </p>
+              <p className="text-xs text-ink-soft mt-1">
+                Bookings made via WhatsApp or walk-in will appear on this schedule automatically.
+              </p>
+            </div>
+            <Button
+              onClick={() => handleOpenQuickBook()}
+              size="sm"
+              className="gap-1.5 shadow-sm mt-1"
+            >
+              <Plus className="h-4 w-4" />
+              <span>New appointment</span>
+            </Button>
           </div>
         )}
       </div>

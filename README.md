@@ -90,4 +90,13 @@ npm start
 - **Language**: TypeScript (Strict mode)
 - **Styling**: Tailwind CSS with custom Design Tokens & Lucide Icons
 - **State & Mock Server**: In-memory server-store with persistent simulation & MSW handlers
-- **Testing**: Vitest, React Testing Library, JSDOM
+- **Testing**: Vitest, React Testing Library, Playwright, axe-core
+
+---
+
+## 📊 Performance, Accessibility & Audits
+
+- **Lighthouse & Accessibility (axe-core)**: Continuous integration audits run on production builds across both unauthenticated public routes and authenticated staff sessions.
+
+> [!NOTE]
+> **Post-Persistence Verification**: Re-measure Lighthouse with realistic data after persistence. As database persistence layers replace mock in-memory stores, re-run `node scripts/run-lh.js` to verify that real database queries and latency profiles keep mobile performance and time-to-interactive within the $\ge 0.90$ budget.

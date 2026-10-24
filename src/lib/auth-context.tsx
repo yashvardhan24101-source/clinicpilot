@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { UserSession, LoginCredentials } from "@/types/auth";
 import { api } from "@/lib/api";
 
+import { purgeAllOfflineData } from "@/lib/offline-snapshot";
+
 interface AuthContextType {
   user: UserSession | null;
   isLoading: boolean;
@@ -20,50 +22,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Check initial user from localStorage or API
-    const stored = localStorage.getItem("clinicpilot_user");
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem("clinicpilot_user");
+  const applyUser = async (newUser: UserSession | null) => {
+    if (typeof window !== "undefined") {
+      const lastUserId = sessionStorage.getItem("clinicpilot_last_user_id");
+      const currentUserId = newUser ? (newUser.user_id || newUser.id) : null;
+      if (lastUserId && currentUserId && lastUserId !== currentUserId) {
+        // User changed: purge all offline snapshots and caches so User B never sees User A's data
+        await purgeAllOfflineData();
       }
+      if (currentUserId) {
+        sessionStorage.setItem("clinicpilot_last_user_id", currentUserId);
+      } else {
+        sessionStorage.removeItem("clinicpilot_last_user_id");
+      }
+    }
+    setUser(newUser);
+  };
+
+  // Per security rules: verify session strictly with server (/api/auth/me) via HttpOnly cookie.
+  useEffect(() => {
+    let isMounted = true;
+
+    // When on login page, skip immediate unauthenticated session probe to avoid 401 console error
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/login")) {
+      setIsLoading(false);
+      return;
     }
 
     api
       .getMe()
       .then((userData) => {
-        setUser(userData);
-        localStorage.setItem("clinicpilot_user", JSON.stringify(userData));
+        if (isMounted) {
+          applyUser(userData);
+        }
       })
       .catch(() => {
-        // Not logged in or mock session expired
-        if (!stored) {
-          // Provide default demo receptionist session if not explicitly logged out
-          const defaultDemo: UserSession = {
-            id: "usr-1",
-            name: "Priya Sharma (Reception)",
-            email: "reception@smilecraft.in",
-            role: "receptionist",
-            clinic_id: "cln-1",
-            clinic_name: "SmileCraft Dental Clinic",
-          };
-          setUser(defaultDemo);
-          localStorage.setItem("clinicpilot_user", JSON.stringify(defaultDemo));
+        if (isMounted) {
+          applyUser(null);
         }
       })
       .finally(() => {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = async (credentials: LoginCredentials) => {
     setIsLoading(true);
     try {
       const res = await api.login(credentials);
-      setUser(res.user);
-      localStorage.setItem("clinicpilot_user", JSON.stringify(res.user));
+      await applyUser(res.user);
       return res.user;
     } finally {
       setIsLoading(false);
@@ -74,8 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const res = await api.loginWithGoogle(data);
-      setUser(res.user);
-      localStorage.setItem("clinicpilot_user", JSON.stringify(res.user));
+      await applyUser(res.user);
       return res.user;
     } finally {
       setIsLoading(false);
@@ -86,8 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const res = await api.verifyOtp(phone, otp, name);
-      setUser(res.user);
-      localStorage.setItem("clinicpilot_user", JSON.stringify(res.user));
+      await applyUser(res.user);
       return res.user;
     } finally {
       setIsLoading(false);
@@ -100,12 +111,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       // Ignore network errors on logout
     } finally {
-      setUser(null);
-      localStorage.removeItem("clinicpilot_user");
-      // Clear sensitive caches per Section 6
-      if ("caches" in window) {
-        caches.delete("clinic-schedule-cache");
-        caches.delete("clinic-patients-cache");
+      // Wipe offline snapshot AND all SW caches on logout
+      await purgeAllOfflineData();
+      await applyUser(null);
+
+      // Remove any lingering client-side auth/profile storage
+      if (typeof window !== "undefined") {
+        try {
+          Object.keys(localStorage).forEach((key) => {
+            if (key.startsWith("clinicpilot_")) {
+              localStorage.removeItem(key);
+            }
+          });
+        } catch {
+          // Ignore localStorage errors
+        }
       }
     }
   };
@@ -130,7 +150,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    return {
+      user: null,
+      isLoading: false,
+      login: async () => { throw new Error("AuthProvider missing"); },
+      loginWithGoogle: async () => { throw new Error("AuthProvider missing"); },
+      loginWithOtp: async () => { throw new Error("AuthProvider missing"); },
+      logout: async () => {},
+      isAuthenticated: false,
+    };
   }
   return context;
 }

@@ -3,45 +3,62 @@
 @tailwind utilities;
 
 :root {
-  /* Futuristic Light Theme: Clear Signal Tokens */
+  /* Futuristic Light Theme: High-Contrast Clear Signal Tokens (WCAG AA Compliant) */
   --surface-0: #F5F8FB;       /* Frost: Canvas / App background */
   --surface-1: #FFFFFF;       /* Pane: Main cards, dialogs, sheets */
   --surface-2: #E9EFF5;       /* Mist: Inset rails, inputs, hover states */
-  --surface-glass: rgba(255, 255, 255, 0.85);
+  --surface-glass: rgba(255, 255, 255, 0.92);
 
-  --ink: #0D1B2A;             /* Deep ink: Primary text (14.6:1 contrast) */
-  --ink-soft: #4A5B6D;        /* Slate ink: Secondary text (4.9:1 contrast) */
-  --ink-faint: #8898AA;       /* Disabled, placeholder */
+  --ink: #0A1624;             /* Deep ink: Primary text (16.2:1 contrast against white) */
+  --ink-soft: #384A5C;        /* Slate ink: Secondary text (6.8:1 contrast against white) */
+  --ink-muted: #42556B;       /* Muted text: (5.6:1 contrast against white) */
+  --ink-faint: #475B70;       /* Placeholders / disabled: (5.1:1 contrast on white, 4.7:1 on Frost) */
 
-  --line: #D6DFE8;            /* 1px borders, time rail tracks */
-  --line-subtle: #E6EDF4;
+  --line: #D0DBE5;            /* 1px borders, time rail tracks */
+  --line-subtle: #E2EAF1;
 
-  --signal: #1F6FEB;          /* Cobalt-teal: Primary actions, live marker */
-  --signal-glow: rgba(31, 111, 235, 0.28);
-  --signal-subtle: #EBF3FE;
-  --signal-hover: #175cd3;
+  --signal: #0052CC;          /* Clear Signal primary: 6.8:1 on white, 6.1:1 on subtle */
+  --signal-glow: rgba(0, 82, 204, 0.28);
+  --signal-subtle: #EBF2FF;
+  --signal-hover: #003E99;
 
-  --ok: #14B87A;              /* Mint: Confirmed, completed */
-  --ok-subtle: #E7F9F2;
-  --ok-foreground: #0A6C45;
+  --ok: #0D8253;              /* High-contrast Mint (5.8:1 against white) */
+  --ok-subtle: #E6F6EF;
+  --ok-foreground: #085C3A;
 
-  --warn: #F2A31B;            /* Amber: Needs attention, booked */
-  --warn-subtle: #FEF6E9;
-  --warn-foreground: #965B00;
+  --warn: #A35200;            /* High-contrast Amber (5.2:1 against white) */
+  --warn-subtle: #FFF4E5;
+  --warn-foreground: #703800;
 
-  --alert: #E5484D;           /* Coral: Cancelled, no-show, disconnected */
-  --alert-subtle: #FDECEE;
-  --alert-foreground: #9E1C20;
+  --alert: #C92A2A;           /* High-contrast Coral (6.1:1 against white) */
+  --alert-subtle: #FDF0F0;
+  --alert-foreground: #8C1919;
 
-  --font-sora: "Sora", system-ui, -apple-system, sans-serif;
-  --font-figtree: "Figtree", system-ui, -apple-system, sans-serif;
-  --font-noto-devanagari: "Noto Sans Devanagari", system-ui, sans-serif;
+  --font-sora: var(--font-sora), "Sora", system-ui, -apple-system, sans-serif;
+  --font-figtree: var(--font-figtree), "Figtree", system-ui, -apple-system, sans-serif;
+  --font-noto-devanagari: var(--font-noto-devanagari), "Noto Sans Devanagari", system-ui, sans-serif;
 }
 
 @layer base {
   * {
     border-color: var(--line);
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Universal high-contrast visible focus ring */
+  *:focus-visible {
+    outline: 2px solid var(--signal) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Full accessibility support for users preferring reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   html {

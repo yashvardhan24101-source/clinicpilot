@@ -32,6 +32,7 @@ export interface QueueState {
 
 export interface Appointment {
   id: string;
+  clinic_id?: string;
   patient_id: string;
   patient_name: string;
   patient_phone: string;
@@ -59,6 +60,7 @@ export interface Appointment {
 
 export interface Doctor {
   id: string;
+  clinic_id?: string;
   name: string;
   specialty: string;
   qualifications?: string;
@@ -81,6 +83,7 @@ export interface Doctor {
 
 export interface Service {
   id: string;
+  clinic_id?: string;
   name: string;
   duration_minutes: number;
   price: number;
@@ -89,6 +92,7 @@ export interface Service {
 
 export interface Patient {
   id: string;
+  clinic_id?: string;
   name: string;
   phone: string;
   language: "en" | "hi" | "hinglish";
@@ -129,6 +133,7 @@ export interface ChatMessage {
 
 export interface Conversation {
   id: string;
+  clinic_id?: string;
   patient_id: string;
   patient_name: string;
   patient_phone: string;
@@ -141,6 +146,7 @@ export interface Conversation {
 
 export interface FollowUp {
   id: string;
+  clinic_id?: string;
   patient_id: string;
   patient_name: string;
   patient_phone: string;
@@ -160,6 +166,7 @@ export interface DayCounts {
 
 export interface LabReport {
   id: string;
+  clinic_id?: string;
   patient_id: string;
   patient_name: string;
   title: string;

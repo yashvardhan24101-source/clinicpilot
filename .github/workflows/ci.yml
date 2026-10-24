@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-audit:
+    name: Build, Test & Lighthouse Audit
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      DEMO_MODE: "false"
+      NEXT_PUBLIC_DEMO_MODE: "false"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Generate Random Per-Run Session Secret
+        run: echo "SESSION_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: TypeScript Typecheck
+        run: npx tsc --noEmit
+
+      - name: Run Vitest Unit & Security Tests
+        run: npm test
+
+      - name: Build Next.js Production App
+        run: npm run build
+        env:
+          NODE_ENV: production
+          DEMO_MODE: "false"
+          NEXT_PUBLIC_DEMO_MODE: "false"
+
+      - name: Start Production Server
+        run: |
+          npm start -- -p 3000 &
+          npx wait-on http://localhost:3000/login --timeout 60000
+        env:
+          NODE_ENV: production
+
+      - name: Install Playwright Chromium with Dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright Accessibility (Axe) E2E Tests
+        run: npx playwright test src/tests/e2e/accessibility-axe.spec.ts
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Run Unauthenticated Lighthouse CI Audits (/login, /, /terms, /privacy)
+        run: npx @lhci/cli autorun --config=lighthouserc.json
+        env:
+          LHCI_BUILD_CONTEXT__CURRENT_HASH: ${{ github.sha }}
+
+      - name: Run Authenticated Lighthouse Mobile Evaluation (/today, /calendar, /inbox, /patients)
+        run: node scripts/run-lh.js ci
+        env:
+          BASE_URL: http://localhost:3000

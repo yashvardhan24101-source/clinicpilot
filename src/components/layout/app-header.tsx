@@ -2,9 +2,10 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Sparkles, Wifi, WifiOff, MessageSquare, HeartPulse, ArrowRight } from "lucide-react";
+import { Sparkles, WifiOff, MessageSquare } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 interface AppHeaderProps {
   clinicName?: string;
@@ -14,12 +15,27 @@ interface AppHeaderProps {
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
-  clinicName = "SmileCraft Dental Clinic",
+  clinicName,
   isWhatsAppConnected = true,
-  needsStaffCount = 2,
+  needsStaffCount = 0,
   isOnline = true,
 }) => {
-  const [waConnected, setWaConnected] = useState(isWhatsAppConnected);
+  const { user } = useAuth();
+  const isDemo =
+    typeof process !== "undefined" &&
+    (process.env.NEXT_PUBLIC_DEMO_MODE === "true" || process.env.DEMO_MODE === "true");
+  const [waConnected, setWaConnected] = useState(isDemo ? isWhatsAppConnected : false);
+
+  const displayClinicName = user?.clinic_name || clinicName || "Clinic";
+  const initials = user?.name
+    ? user.name
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0])
+        .join("")
+        .toUpperCase()
+    : "ST";
 
   return (
     <header className="sticky top-0 z-40 w-full glass-panel border-b transition-colors select-none">
@@ -34,50 +50,66 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               ClinicPilot
             </span>
             <h1 className="text-sm font-semibold text-ink truncate leading-tight">
-              {clinicName}
+              {displayClinicName}
             </h1>
           </div>
         </div>
 
         {/* Status Indicators & Profile */}
         <div className="flex items-center gap-2 sm:gap-2.5">
-          {/* Switch to Patient Portal Button */}
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-signal/10 hover:bg-signal/20 border border-signal/25 text-xs font-bold text-signal transition-all shadow-2xs group"
-            title="Switch to Patient Portal"
-          >
-            <HeartPulse className="h-3.5 w-3.5 text-signal" />
-            <span className="font-display font-semibold">Patient Portal</span>
-            <ArrowRight className="h-3 w-3 hidden sm:inline text-signal/70 group-hover:translate-x-0.5 transition-transform" />
-          </Link>
           {/* WhatsApp Status Toggle/Badge */}
-          <button
-            onClick={() => setWaConnected(!waConnected)}
-            title={waConnected ? "WhatsApp Bot Active (Tap to test disconnect)" : "WhatsApp Disconnected"}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors",
-              waConnected
-                ? "bg-ok-subtle text-ok-foreground border-ok/30"
-                : "bg-alert-subtle text-alert-foreground border-alert/30 animate-pulse"
-            )}
-          >
-            <span
+          {isDemo ? (
+            <button
+              type="button"
+              onClick={() => setWaConnected(!waConnected)}
+              aria-label={
+                waConnected
+                  ? "WA Live - WhatsApp Bot Active (Tap to test disconnect)"
+                  : "WA Disconnected - WhatsApp Bot Offline"
+              }
+              title={
+                waConnected
+                  ? "WA Live - WhatsApp Bot Active (Tap to test disconnect)"
+                  : "WA Disconnected - WhatsApp Bot Offline"
+              }
               className={cn(
-                "h-2 w-2 rounded-full",
-                waConnected ? "bg-ok" : "bg-alert"
+                "flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] rounded-full text-xs font-medium border transition-colors focus-visible:ring-2 focus-visible:ring-signal",
+                waConnected
+                  ? "bg-ok-subtle text-ok-foreground border-ok/30"
+                  : "bg-alert-subtle text-alert-foreground border-alert/30 animate-pulse"
               )}
-            />
-            <span className="hidden sm:inline font-display">
-              {waConnected ? "WA Live" : "WA Disconnected"}
-            </span>
-          </button>
+            >
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  waConnected ? "bg-ok" : "bg-alert"
+                )}
+              />
+              <span className="font-display">
+                {waConnected ? "WA Live" : "WA Disconnected"}
+              </span>
+            </button>
+          ) : (
+            <div
+              role="status"
+              aria-label="WhatsApp: not connected"
+              title="WhatsApp: not connected (integration pending)"
+              className="flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] rounded-full text-xs font-medium border transition-colors bg-surface-2 text-ink-muted border-line"
+            >
+              <span className="h-2 w-2 rounded-full bg-ink-faint" />
+              <span className="font-display">WhatsApp: not connected</span>
+            </div>
+          )}
 
           {/* Online/Offline indicator */}
           {!isOnline && (
-            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-warn-subtle text-warn-foreground text-xs font-medium border border-warn/30">
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-1 px-2.5 py-1.5 min-h-[44px] rounded-full bg-warn-subtle text-warn-foreground text-xs font-medium border border-warn/30"
+            >
               <WifiOff className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Offline</span>
+              <span>Offline</span>
             </div>
           )}
 
@@ -85,7 +117,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           {needsStaffCount > 0 && (
             <Link
               href="/inbox"
-              className="relative flex items-center justify-center h-8 w-8 rounded-lg bg-surface-2 text-ink-soft hover:text-signal hover:bg-signal-subtle transition-colors"
+              aria-label={`${needsStaffCount} conversations need staff attention`}
+              className="relative flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg bg-surface-2 text-ink-soft hover:text-signal hover:bg-signal-subtle transition-colors focus-visible:ring-2 focus-visible:ring-signal"
               title={`${needsStaffCount} conversations need staff attention`}
             >
               <MessageSquare className="h-4 w-4" />
@@ -95,11 +128,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </Link>
           )}
 
-          {/* Reception Profile Avatar */}
-          <Link href="/more" title="Receptionist profile">
+          {/* Staff Profile Avatar */}
+          <Link
+            href="/more"
+            aria-label={user ? `${initials} - Profile for ${user.name} (${user.role})` : `${initials} - Staff Profile`}
+            title={user ? `${user.name} (${user.role})` : "Staff Profile"}
+            className="flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg focus-visible:ring-2 focus-visible:ring-signal"
+          >
             <Avatar className="h-8 w-8 ring-1 ring-line hover:ring-signal transition-all cursor-pointer">
-              <AvatarFallback className="bg-signal-subtle text-signal font-semibold text-xs">
-                RD
+              <AvatarFallback aria-hidden="true" className="bg-signal-subtle text-signal font-semibold text-xs">
+                {initials}
               </AvatarFallback>
             </Avatar>
           </Link>

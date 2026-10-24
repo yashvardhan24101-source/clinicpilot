@@ -59,7 +59,8 @@ export const ConversationDetail: React.FC<ConversationDetailProps> = ({
           {onBack && (
             <button
               onClick={onBack}
-              className="lg:hidden p-1.5 -ml-1 rounded-lg text-ink-soft hover:text-ink hover:bg-surface-2 transition-colors"
+              aria-label="Back to conversation list"
+              className="lg:hidden min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1.5 -ml-1 rounded-lg text-ink-soft hover:text-ink hover:bg-surface-2 transition-colors focus-visible:ring-2 focus-visible:ring-signal"
               title="Back to conversation list"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -136,15 +137,17 @@ export const ConversationDetail: React.FC<ConversationDetailProps> = ({
       >
         <Input
           placeholder="Reply in English, Hindi, or Hinglish..."
+          aria-label="Reply message"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          className="flex-1 font-devanagari text-sm"
+          className="flex-1 font-devanagari text-sm min-h-[44px]"
           autoFocus
         />
         <Button
           type="submit"
+          aria-label="Send reply message"
           disabled={!inputText.trim() || isSending}
-          className="gap-1.5 shrink-0 px-4"
+          className="gap-1.5 shrink-0 px-4 min-h-[44px]"
           size="default"
         >
           <Send className="h-4 w-4" />

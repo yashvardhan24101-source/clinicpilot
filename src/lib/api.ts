@@ -18,6 +18,8 @@ import { UserSession, LoginCredentials, AuthResponse } from "@/types/auth";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
+import { purgeAllOfflineData } from "@/lib/offline-snapshot";
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -36,6 +38,10 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      // Purge all offline snapshots and caches on 401
+      purgeAllOfflineData().catch(() => {});
+    }
     const errorText = await res.text().catch(() => "Unknown error");
     throw new ApiError(res.status, errorText || `HTTP error ${res.status}`);
   }

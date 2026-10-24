@@ -1,25 +1,35 @@
 import { NextResponse } from "next/server";
-import { serverStore } from "@/lib/server-store";
-
-interface OtpEntry {
-  code: string;
-  expiresAt: number;
-  attempts: number;
-}
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __clinicpilot_otp_store__: Map<string, OtpEntry> | undefined;
-}
-
-const otpStore: Map<string, OtpEntry> =
-  global.__clinicpilot_otp_store__ || new Map<string, OtpEntry>();
+import { otpStore } from "@/lib/otp-store";
+import {
+  checkOtpAttemptLimit,
+  recordOtpAttempt,
+  resetOtpAttempts,
+} from "@/lib/rate-limiter";
 
 export async function POST(request: Request) {
   try {
+    const isDemo = process.env.DEMO_MODE === "true";
+    const hasRealProvider = !!(
+      process.env.FAST2SMS_API_KEY ||
+      process.env.TWO_FACTOR_API_KEY ||
+      (process.env.TWILIO_ACCOUNT_SID &&
+        process.env.TWILIO_AUTH_TOKEN &&
+        process.env.TWILIO_PHONE_NUMBER)
+    );
+
+    if (!isDemo && !hasRealProvider) {
+      return NextResponse.json(
+        {
+          error:
+            "OTP authentication is not available in production until a registered Indian DLT SMS or WhatsApp provider is configured.",
+        },
+        { status: 503 }
+      );
+    }
+
     const { phone, otp, name } = (await request.json()) as {
-      phone: string;
-      otp: string;
+      phone?: string;
+      otp?: string;
       name?: string;
     };
 
@@ -34,8 +44,27 @@ export async function POST(request: Request) {
     const indianNumber = cleanDigits.slice(-10);
     const enteredOtp = otp.trim();
 
-    // Check master demo code fallback
-    const isMasterCode = enteredOtp === "1234" || enteredOtp === "123456";
+    // Enforce 3 attempts per code limit
+    const attemptCheck = await checkOtpAttemptLimit(indianNumber);
+    if (!attemptCheck.allowed) {
+      if (attemptCheck.error) {
+        return NextResponse.json(
+          { error: attemptCheck.error },
+          { status: 503 }
+        );
+      }
+      otpStore.delete(indianNumber);
+      return NextResponse.json(
+        {
+          error: "Too many failed attempts (maximum 3 attempts per code). Please request a new OTP.",
+        },
+        { status: 429 }
+      );
+    }
+
+    // Master demo codes strictly permitted in DEMO_MODE only
+    const isMasterCode =
+      isDemo && (enteredOtp === "1234" || enteredOtp === "123456");
 
     const entry = otpStore.get(indianNumber);
 
@@ -55,37 +84,40 @@ export async function POST(request: Request) {
         );
       }
 
-      if (entry.attempts >= 4) {
-        otpStore.delete(indianNumber);
-        return NextResponse.json(
-          { error: "Too many failed attempts. Please request a new OTP." },
-          { status: 429 }
-        );
-      }
-
       if (entry.code !== enteredOtp) {
         entry.attempts += 1;
+        await recordOtpAttempt(indianNumber);
+        const remaining = Math.max(0, 3 - entry.attempts);
+
+        if (remaining === 0) {
+          otpStore.delete(indianNumber);
+          return NextResponse.json(
+            { error: "Too many failed attempts. Please request a new OTP." },
+            { status: 429 }
+          );
+        }
+
         return NextResponse.json(
           {
-            error: `Incorrect OTP. You have ${4 - entry.attempts} attempts remaining.`,
+            error: `Incorrect OTP. You have ${remaining} attempt(s) remaining.`,
           },
           { status: 400 }
         );
       }
 
-      // Valid OTP: delete from store
+      // Valid OTP: delete from store and reset attempt tracking
       otpStore.delete(indianNumber);
+      await resetOtpAttempts(indianNumber);
     }
 
-    // Successfully verified! Create or match patient user session
     const formattedPhone = `+91 ${indianNumber.slice(0, 5)} ${indianNumber.slice(5)}`;
-    const patientName = name || "Aarav Mehta";
+    const patientName = name || "Patient User";
 
     const user = {
       id: `pat-${indianNumber}`,
       name: patientName,
       email: `${indianNumber}@patient.clinicpilot.in`,
-      role: "receptionist" as const, // Default UI role or patient
+      role: "receptionist" as const,
       clinic_id: "cln-1",
       clinic_name: "SmileCraft Dental & Healthcare Hub",
     };
@@ -97,8 +129,6 @@ export async function POST(request: Request) {
       verified: true,
       last_login: new Date().toISOString(),
     };
-
-    serverStore.currentUser = user;
 
     return NextResponse.json({
       success: true,

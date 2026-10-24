@@ -1,6 +1,28 @@
 import type { Metadata, Viewport } from "next";
+import { Figtree, Sora, Noto_Sans_Devanagari } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+
+const figtree = Figtree({
+  subsets: ["latin"],
+  variable: "--font-figtree",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
+
+const sora = Sora({
+  subsets: ["latin"],
+  variable: "--font-sora",
+  display: "swap",
+  weight: ["500", "600", "700"],
+});
+
+const notoDevanagari = Noto_Sans_Devanagari({
+  subsets: ["devanagari", "latin"],
+  variable: "--font-noto-devanagari",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "ClinicPilot — Reception & Staff Dashboard",
@@ -32,16 +54,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${figtree.variable} ${sora.variable} ${notoDevanagari.variable}`}
+    >
       <head>
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap"
-          rel="stylesheet"
-        />
       </head>
       <body className="min-h-screen bg-surface-0 font-body text-ink antialiased selection:bg-signal selection:text-white">
         <Providers>{children}</Providers>

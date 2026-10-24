@@ -11,6 +11,7 @@ import {
 } from "../seed-data";
 import { Appointment, Conversation, ChatMessage, LabReport } from "@/types/api";
 import { UserSession } from "@/types/auth";
+import { getClinicTodayIST, getRelativeDateIST } from "@/lib/date-helpers";
 
 // In-memory state for dev and testing
 let appointments: Appointment[] = [...MOCK_APPOINTMENTS];
@@ -48,13 +49,16 @@ export const handlers = [
     }
 
     // Role simulation based on email
-    let role: "receptionist" | "doctor" | "owner" = "receptionist";
+    let role: "receptionist" | "doctor" | "owner" | "super_admin" = "receptionist";
     let name = "Priya (Reception)";
 
-    if (email.includes("doctor") || email.includes("sharma")) {
+    if (email.includes("superadmin")) {
+      role = "super_admin";
+      name = "System Super Admin";
+    } else if (email.includes("doctor") || email.includes("sharma")) {
       role = "doctor";
       name = "Dr. Ananya Sharma";
-    } else if (email.includes("owner") || email.includes("admin")) {
+    } else if (email.includes("owner")) {
       role = "owner";
       name = "Dr. Vikram Patel (Owner)";
     }
@@ -188,7 +192,7 @@ export const handlers = [
       doctor_name: body.doctor_name || MOCK_DOCTORS[0].name,
       service_id: body.service_id || MOCK_SERVICES[0].id,
       service_name: body.service_name || "General Consultation",
-      date: body.date || new Date().toISOString().split("T")[0],
+      date: body.date || getClinicTodayIST(),
       start_time: body.start_time || "11:00",
       end_time: body.end_time || "11:30",
       status: body.status || "booked",
@@ -355,9 +359,9 @@ export const handlers = [
         whatsapp_reminders: true,
         marketing: false,
       },
-      last_visit: new Date().toISOString().split("T")[0],
+      last_visit: getClinicTodayIST(),
       total_visits: 1,
-      created_at: new Date().toISOString().split("T")[0],
+      created_at: getClinicTodayIST(),
     };
     patients.unshift(newPatient);
     return HttpResponse.json(newPatient, { status: 201 });
@@ -394,11 +398,10 @@ export const handlers = [
     const { ids, days } = (await request.json()) as { ids: string[]; days: number };
     followups = followups.map((f) => {
       if (ids.includes(f.id)) {
-        const currentDate = new Date(f.due_date);
-        currentDate.setDate(currentDate.getDate() + (days || 7));
+        const targetDueDate = getRelativeDateIST(days || 7, f.due_date);
         return {
           ...f,
-          due_date: currentDate.toISOString().split("T")[0],
+          due_date: targetDueDate,
           status: "snoozed" as const,
         };
       }
@@ -427,7 +430,7 @@ export const handlers = [
       category: body.category || "x_ray",
       file_name: body.file_name || "diagnostic_report.pdf",
       file_size: body.file_size || "1.5 MB",
-      uploaded_at: new Date().toISOString().split("T")[0],
+      uploaded_at: getClinicTodayIST(),
       sent_to_whatsapp: false,
     };
     reports.unshift(newReport);
@@ -463,7 +466,7 @@ export const handlers = [
       plan_id: plan.id,
       plan_name: plan.name,
       status: "active",
-      renews_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      renews_at: getRelativeDateIST(30),
     };
     return HttpResponse.json({
       status: "success",

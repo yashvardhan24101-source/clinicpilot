@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const baseURL = process.env.BASE_URL || "http://localhost:3000";
+
 export default defineConfig({
   testDir: "./src/tests/e2e",
   fullyParallel: true,
@@ -8,8 +10,11 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL,
     trace: "on-first-retry",
+    contextOptions: {
+      reducedMotion: "reduce",
+    },
   },
   projects: [
     {
@@ -25,8 +30,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    command: "npm run start",
+    url: baseURL,
+    reuseExistingServer: true,
   },
 });

@@ -4,6 +4,18 @@ import React, { useState, useEffect } from "react";
 import { RefreshCw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+export function isUserTyping(): boolean {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement;
+  if (!active || active === document.body) return false;
+  const tag = active.tagName.toUpperCase();
+  const isEditable =
+    (active as HTMLElement).isContentEditable === true ||
+    (active as any).contentEditable === "true" ||
+    active.getAttribute("contenteditable") === "true";
+  return tag === "INPUT" || tag === "TEXTAREA" || isEditable;
+}
+
 export const UpdateToast: React.FC = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
@@ -30,6 +42,10 @@ export const UpdateToast: React.FC = () => {
   }, []);
 
   const handleUpdate = () => {
+    if (isUserTyping()) {
+      // Do not reload while the user is actively typing in any input/textarea
+      return;
+    }
     window.location.reload();
   };
 
@@ -42,23 +58,24 @@ export const UpdateToast: React.FC = () => {
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <h5 className="text-xs font-bold text-ink font-display">
+          <p className="text-xs font-bold text-ink font-display">
             New ClinicPilot Version
-          </h5>
+          </p>
           <p className="text-[11px] text-ink-soft leading-tight">
             An update is ready. Reload when convenient.
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <Button size="sm" onClick={handleUpdate} className="gap-1 h-8 px-2.5 text-xs shadow-sm">
-            <RefreshCw className="h-3 w-3" />
+          <Button size="sm" onClick={handleUpdate} className="gap-1 min-h-[44px] px-3 text-xs shadow-sm">
+            <RefreshCw className="h-3.5 w-3.5" />
             <span>Update</span>
           </Button>
           <button
             onClick={() => setUpdateAvailable(false)}
-            className="p-1 rounded-md text-ink-faint hover:text-ink hover:bg-surface-2 transition-colors"
+            aria-label="Dismiss update notification"
+            className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-ink-faint hover:text-ink hover:bg-surface-2 transition-colors"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       </div>

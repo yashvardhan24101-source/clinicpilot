@@ -14,6 +14,7 @@ import { RescheduleSheet } from "@/components/calendar/reschedule-sheet";
 import { QuickBookSheet } from "@/components/today/quick-book-sheet";
 import { api } from "@/lib/api";
 import { Appointment, AppointmentStatus } from "@/types/api";
+import { getClinicTodayIST } from "@/lib/date-helpers";
 
 // Dynamically import the CalendarView client wrapper
 const CalendarView = dynamic(
@@ -132,7 +133,7 @@ export default function CalendarPage() {
   const handleEventDrop = (dropInfo: any) => {
     const apt = dropInfo.event.extendedProps.appointment as Appointment;
     const newStart = dropInfo.event.start;
-    const newDate = newStart.toISOString().split("T")[0];
+    const newDate = getClinicTodayIST(newStart);
     const newTime = newStart.toTimeString().substring(0, 5);
 
     statusMutation.mutate({
@@ -181,7 +182,7 @@ export default function CalendarPage() {
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         <button
           onClick={() => setSelectedDoctor("all")}
-          className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border ${
+          className={`px-3.5 py-2 min-h-[44px] inline-flex items-center rounded-full text-xs font-semibold whitespace-nowrap transition-colors border ${
             selectedDoctor === "all"
               ? "bg-signal text-white border-signal shadow-sm"
               : "bg-surface-1 text-ink-soft border-line hover:bg-surface-2"
@@ -196,7 +197,7 @@ export default function CalendarPage() {
             <button
               key={doc.id}
               onClick={() => setSelectedDoctor(doc.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border flex items-center gap-1.5 ${
+              className={`px-3.5 py-2 min-h-[44px] inline-flex items-center rounded-full text-xs font-semibold whitespace-nowrap transition-colors border gap-1.5 ${
                 isSelected
                   ? "bg-signal text-white border-signal shadow-sm"
                   : "bg-surface-1 text-ink-soft border-line hover:bg-surface-2"

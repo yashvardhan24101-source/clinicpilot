@@ -17,7 +17,11 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
     <div className="space-y-1">
       {/* Offline Alert */}
       {!isOnline && (
-        <div className="bg-warn-subtle border-b border-warn/30 px-4 py-2.5 text-xs text-warn-foreground font-medium flex items-center justify-between">
+        <div
+          role="status"
+          aria-live="polite"
+          className="bg-warn-subtle border-b border-warn/30 px-4 py-2.5 text-xs text-warn-foreground font-medium flex items-center justify-between"
+        >
           <div className="flex items-center gap-2">
             <WifiOff className="h-4 w-4 shrink-0 text-warn" />
             <span>
@@ -30,7 +34,11 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
 
       {/* Needs Staff Takeover Strip */}
       {needsStaffCount > 0 && (
-        <div className="bg-signal-subtle border-b border-signal/20 px-4 py-2.5 text-xs font-medium text-ink flex items-center justify-between">
+        <div
+          role="status"
+          aria-live="polite"
+          className="bg-signal-subtle border-b border-signal/20 px-4 py-2.5 text-xs font-medium text-ink flex items-center justify-between"
+        >
           <div className="flex items-center gap-2 min-w-0">
             <AlertTriangle className="h-4 w-4 shrink-0 text-signal" />
             <span className="truncate">

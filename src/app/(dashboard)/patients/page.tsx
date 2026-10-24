@@ -125,6 +125,7 @@ export default function PatientsPage() {
         <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-ink-faint" />
         <Input
           placeholder="Search by patient name or phone number..."
+          aria-label="Search by patient name or phone number"
           className="pl-10"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -161,9 +162,9 @@ export default function PatientsPage() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-ink truncate font-devanagari">
+                        <h3 className="text-sm font-bold text-ink truncate font-devanagari">
                           {patient.name}
-                        </h4>
+                        </h3>
                         <span className="px-1.5 py-0.2 rounded-md bg-surface-2 text-[10px] font-semibold text-ink-soft uppercase font-display">
                           {patient.language}
                         </span>
@@ -176,13 +177,14 @@ export default function PatientsPage() {
                         <button
                           type="button"
                           onClick={(e) => toggleReveal(patient.id, e)}
-                          className="text-ink-faint hover:text-signal p-0.5 rounded transition-colors"
+                          aria-label={isRevealed ? `Hide phone for ${patient.name}` : `Reveal phone for ${patient.name}`}
+                          className="text-ink-soft hover:text-signal min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-signal"
                           title={isRevealed ? "Hide phone" : "Reveal phone"}
                         >
                           {isRevealed ? (
-                            <EyeOff className="h-3.5 w-3.5" />
+                            <EyeOff className="h-4 w-4" />
                           ) : (
-                            <Eye className="h-3.5 w-3.5" />
+                            <Eye className="h-4 w-4" />
                           )}
                         </button>
                       </div>

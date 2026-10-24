@@ -23,6 +23,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { Row } from "@/components/ui/row";
 import { AppointmentDetailSheet } from "@/components/calendar/appointment-detail-sheet";
 import { RescheduleSheet } from "@/components/calendar/reschedule-sheet";
+import { getClinicTodayIST } from "@/lib/date-helpers";
 import { api } from "@/lib/api";
 import { formatTimeDisplay, formatDateDisplay, maskPhoneNumber } from "@/lib/utils";
 import { Appointment, AppointmentStatus } from "@/types/api";
@@ -97,7 +98,7 @@ export default function AppointmentsListPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `clinicpilot_appointments_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `clinicpilot_appointments_${getClinicTodayIST()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

@@ -12,6 +12,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Doctor, Service, Appointment } from "@/types/api";
+import { getClinicTodayIST } from "@/lib/date-helpers";
 
 interface QuickBookSheetProps {
   isOpen: boolean;
@@ -64,7 +65,7 @@ export const QuickBookSheet: React.FC<QuickBookSheetProps> = ({
       status: "booked",
       source: "walkin",
       notes: notes.trim(),
-      date: new Date().toISOString().split("T")[0],
+      date: getClinicTodayIST(),
     });
 
     // Reset and close

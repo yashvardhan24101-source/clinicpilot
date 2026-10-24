@@ -80,10 +80,6 @@ export const KeyboardShortcutsDialog: React.FC = () => {
             router.push("/billing");
             setIsOpen(false);
             break;
-          case "d":
-            router.push("/");
-            setIsOpen(false);
-            break;
         }
       }
     };
@@ -113,8 +109,7 @@ export const KeyboardShortcutsDialog: React.FC = () => {
     { key: "P", label: "Patients Directory", icon: Users, href: "/patients" },
     { key: "F", label: "Follow-ups & Recalls", icon: BellRing, href: "/followups" },
     { key: "R", label: "Lab Reports & PDFs", icon: FileText, href: "/reports" },
-    { key: "B", label: "Razorpay Billing & Plans", icon: CreditCard, href: "/billing" },
-    { key: "D", label: "Patient Portal (Book Online)", icon: HeartPulse, href: "/" },
+    { key: "B", label: "Billing", icon: CreditCard, href: "/billing" },
   ];
 
   return (

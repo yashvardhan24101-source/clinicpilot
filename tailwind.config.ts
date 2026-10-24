@@ -26,6 +26,7 @@ const config: Config = {
         ink: {
           DEFAULT: "var(--ink)",
           soft: "var(--ink-soft)",
+          muted: "var(--ink-muted)",
           faint: "var(--ink-faint)",
         },
         line: {

@@ -25,6 +25,21 @@ export default function CalendarView({
     if (calendarRef.current) {
       calendarRef.current.getApi?.()?.updateSize?.();
     }
+
+    const setAriaLabels = () => {
+      document.querySelectorAll(".fc-prev-button").forEach((btn) => {
+        btn.setAttribute("aria-label", "Previous - Go to previous date range");
+      });
+      document.querySelectorAll(".fc-next-button").forEach((btn) => {
+        btn.setAttribute("aria-label", "Next - Go to next date range");
+      });
+      document.querySelectorAll(".fc-today-button").forEach((btn) => {
+        btn.setAttribute("aria-label", "Today - Go to current date");
+      });
+    };
+    setAriaLabels();
+    const timeout = setTimeout(setAriaLabels, 200);
+    return () => clearTimeout(timeout);
   }, []);
 
   return (
@@ -36,6 +51,14 @@ export default function CalendarView({
         left: "prev,next today",
         center: "title",
         right: "timeGridDay,timeGridWeek,dayGridMonth",
+      }}
+      buttonText={{
+        today: "Today",
+        month: "Month",
+        week: "Week",
+        day: "Day",
+        prev: "Previous",
+        next: "Next",
       }}
       slotMinTime="08:00:00"
       slotMaxTime="20:30:00"

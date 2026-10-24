@@ -158,17 +158,19 @@ export default function InboxPage() {
               <Search className="absolute left-3 top-3 h-3.5 w-3.5 text-ink-faint" />
               <Input
                 placeholder="Search patient name, phone..."
+                aria-label="Search patient name, phone"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 h-9 text-xs"
+                className="pl-8 h-10 text-xs"
               />
             </div>
 
             {/* Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
               <button
                 onClick={() => setFilterState("all")}
-                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border ${
+                aria-label={`All (${conversations.length}) conversations`}
+                className={`px-3.5 py-1.5 min-h-[44px] inline-flex items-center rounded-full text-xs font-semibold whitespace-nowrap transition-colors border ${
                   filterState === "all"
                     ? "bg-signal text-white border-signal shadow-sm"
                     : "bg-surface-1 text-ink-soft border-line hover:bg-surface-2"
@@ -179,25 +181,27 @@ export default function InboxPage() {
 
               <button
                 onClick={() => setFilterState("needs_staff")}
-                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border flex items-center gap-1 ${
+                aria-label={`Needs Staff (${needsStaffCount}) - Show conversations needing staff takeover`}
+                className={`px-3.5 py-1.5 min-h-[44px] inline-flex items-center rounded-full text-xs font-semibold whitespace-nowrap transition-colors border gap-1 ${
                   filterState === "needs_staff"
                     ? "bg-alert text-white border-alert shadow-sm"
                     : "bg-surface-1 text-ink-soft border-line hover:bg-surface-2"
                 }`}
               >
-                <AlertTriangle className="h-3 w-3" />
+                <AlertTriangle className="h-3.5 w-3.5" />
                 <span>Needs Staff ({needsStaffCount})</span>
               </button>
 
               <button
                 onClick={() => setFilterState("bot_handling")}
-                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border flex items-center gap-1 ${
+                aria-label="Bot Active - Show conversations handled by bot"
+                className={`px-3.5 py-1.5 min-h-[44px] inline-flex items-center rounded-full text-xs font-semibold whitespace-nowrap transition-colors border gap-1 ${
                   filterState === "bot_handling"
                     ? "bg-signal-subtle text-signal border-signal/40 shadow-sm"
                     : "bg-surface-1 text-ink-soft border-line hover:bg-surface-2"
                 }`}
               >
-                <Bot className="h-3 w-3" />
+                <Bot className="h-3.5 w-3.5" />
                 <span>Bot Active</span>
               </button>
             </div>
@@ -259,7 +263,11 @@ export default function InboxPage() {
             ) : (
               <div className="p-8 text-center space-y-2">
                 <MessageSquare className="h-6 w-6 text-ink-faint mx-auto" />
-                <p className="text-xs text-ink-soft">No conversations found.</p>
+                <p className="text-xs text-ink-soft">
+                  {search || filterState !== "all"
+                    ? "No conversations found."
+                    : "No conversations yet. Connect WhatsApp to start receiving messages."}
+                </p>
               </div>
             )}
           </div>
@@ -287,10 +295,12 @@ export default function InboxPage() {
                 <MessageSquare className="h-7 w-7" />
               </div>
               <h3 className="text-base font-bold text-ink font-display">
-                Select a WhatsApp Conversation
+                {conversations.length === 0 ? "No Conversations" : "Select a WhatsApp Conversation"}
               </h3>
               <p className="text-xs text-ink-soft max-w-xs">
-                Pick a patient from the list on the left to review messages, send replies, or hand over to the bot.
+                {conversations.length === 0
+                  ? "No conversations yet. Connect WhatsApp to start receiving messages."
+                  : "Pick a patient from the list on the left to review messages, send replies, or hand over to the bot."}
               </p>
             </div>
           )}

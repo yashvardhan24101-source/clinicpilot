@@ -51,25 +51,6 @@ export function maskPhoneNumber(phone: string): string {
 }
 
 /**
- * Formats appointment dates into readable localized format (e.g. "Today, 12 Oct 2026")
+ * Formats appointment dates into readable localized format (e.g. "Today, 13 Oct 2026") in Asia/Kolkata
  */
-export function formatDateDisplay(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    const today = new Date();
-    const isToday =
-      d.getDate() === today.getDate() &&
-      d.getMonth() === today.getMonth() &&
-      d.getFullYear() === today.getFullYear();
-
-    const formatted = d.toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-
-    return isToday ? `Today, ${formatted}` : formatted;
-  } catch {
-    return dateStr;
-  }
-}
+export { formatClinicDateDisplay as formatDateDisplay } from "./date-helpers";

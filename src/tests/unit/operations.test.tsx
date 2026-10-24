@@ -22,7 +22,7 @@ describe("Milestone 7 Operations & Keyboard Shortcuts", () => {
     expect(screen.getByText("Keyboard Shortcuts & Quick Jump")).toBeInTheDocument();
     expect(screen.getByText("Today Schedule & Time Rail")).toBeInTheDocument();
     expect(screen.getByText("Lab Reports & PDFs")).toBeInTheDocument();
-    expect(screen.getByText("Razorpay Billing & Plans")).toBeInTheDocument();
+    expect(screen.getByText("Billing")).toBeInTheDocument();
   });
 
   it("navigates to route when shortcut item is clicked", () => {
@@ -37,15 +37,12 @@ describe("Milestone 7 Operations & Keyboard Shortcuts", () => {
     expect(mockPush).toHaveBeenCalledWith("/reports");
   });
 
-  it("navigates to patient portal when Patient Portal shortcut item is clicked", () => {
+  it("verifies Patient Portal shortcut is removed from staff shortcuts dialog (Rule Group D)", () => {
     render(<KeyboardShortcutsDialog />);
 
     const triggerBtn = screen.getByRole("button", { name: /keyboard shortcuts/i });
     fireEvent.click(triggerBtn);
 
-    const patientPortalBtn = screen.getByText(/Patient Portal \(Book Online\)/i);
-    fireEvent.click(patientPortalBtn);
-
-    expect(mockPush).toHaveBeenCalledWith("/");
+    expect(screen.queryByText(/Patient Portal/i)).toBeNull();
   });
 });
