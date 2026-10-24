@@ -9,12 +9,22 @@ import {
   Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AppointmentDetailSheet } from "@/components/calendar/appointment-detail-sheet";
-import { RescheduleSheet } from "@/components/calendar/reschedule-sheet";
-import { QuickBookSheet } from "@/components/today/quick-book-sheet";
 import { api } from "@/lib/api";
 import { Appointment, AppointmentStatus } from "@/types/api";
 import { getClinicTodayIST } from "@/lib/date-helpers";
+
+const AppointmentDetailSheet = dynamic(
+  () => import("@/components/calendar/appointment-detail-sheet").then((m) => m.AppointmentDetailSheet),
+  { ssr: false }
+);
+const RescheduleSheet = dynamic(
+  () => import("@/components/calendar/reschedule-sheet").then((m) => m.RescheduleSheet),
+  { ssr: false }
+);
+const QuickBookSheet = dynamic(
+  () => import("@/components/today/quick-book-sheet").then((m) => m.QuickBookSheet),
+  { ssr: false }
+);
 
 // Dynamically import the CalendarView client wrapper
 const CalendarView = dynamic(

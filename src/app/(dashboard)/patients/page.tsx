@@ -14,15 +14,26 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
 import { Row } from "@/components/ui/row";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PatientProfileSheet } from "@/components/patients/patient-profile-sheet";
-import { AddPatientSheet } from "@/components/patients/add-patient-sheet";
-import { QuickBookSheet } from "@/components/today/quick-book-sheet";
 import { api } from "@/lib/api";
 import { maskPhoneNumber, formatDateDisplay } from "@/lib/utils";
 import { Patient, PatientProfile, Doctor, Service, Appointment } from "@/types/api";
+
+const PatientProfileSheet = dynamic(
+  () => import("@/components/patients/patient-profile-sheet").then((m) => m.PatientProfileSheet),
+  { ssr: false }
+);
+const AddPatientSheet = dynamic(
+  () => import("@/components/patients/add-patient-sheet").then((m) => m.AddPatientSheet),
+  { ssr: false }
+);
+const QuickBookSheet = dynamic(
+  () => import("@/components/today/quick-book-sheet").then((m) => m.QuickBookSheet),
+  { ssr: false }
+);
 
 export default function PatientsPage() {
   const queryClient = useQueryClient();

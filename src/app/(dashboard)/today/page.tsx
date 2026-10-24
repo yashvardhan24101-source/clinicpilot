@@ -15,8 +15,13 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
 import { TimeRail } from "@/components/today/time-rail";
-import { QuickBookSheet } from "@/components/today/quick-book-sheet";
+
+const QuickBookSheet = dynamic(
+  () => import("@/components/today/quick-book-sheet").then((m) => m.QuickBookSheet),
+  { ssr: false }
+);
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { formatClinicDateDisplay, getClinicTodayIST, getClinicTimeDisplayIST } from "@/lib/date-helpers";

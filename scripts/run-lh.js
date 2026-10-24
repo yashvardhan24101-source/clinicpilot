@@ -152,7 +152,7 @@ async function run() {
     console.log(`\n2. Running 3 Lighthouse Audits for ${page.name} (${page.path})`);
     for (let runIndex = 1; runIndex <= 3; runIndex++) {
       const outputPath = `./lh-temp-${page.name}-run${runIndex}.json`;
-      const cmd = `npx --yes lighthouse "${baseUrl}${page.path}" --output=json --output-path="${outputPath}" --chrome-flags="--headless --no-sandbox" --extra-headers="{\\"Cookie\\":\\"clinicpilot_session=${token}\\"}" --quiet`;
+      const cmd = `npx --yes lighthouse "${baseUrl}${page.path}" --output=json --output-path="${outputPath}" --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu" --extra-headers="{\\"Cookie\\":\\"clinicpilot_session=${token}\\"}" --quiet`;
 
       try {
         execSync(cmd, { stdio: "ignore" });
@@ -169,6 +169,7 @@ async function run() {
         if (fs.existsSync(outputPath)) {
           fs.unlinkSync(outputPath);
         }
+        await new Promise((r) => setTimeout(r, 500));
       } catch (err) {
         console.error(`  Error in Run ${runIndex} for ${page.name}:`, err.message);
         hasFailures = true;
