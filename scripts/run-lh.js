@@ -101,6 +101,19 @@ async function run() {
   console.log(`Session Token Generated for Receptionist (SmileCraft Dental)`);
   console.log(`======================================================\n`);
 
+  const { default: lighthouse } = await import("lighthouse");
+  const chromeLauncher = await import("chrome-launcher");
+
+  const chrome = await chromeLauncher.launch({
+    chromeFlags: [
+      "--headless",
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-extensions",
+    ],
+  });
+
   const pages = [
     {
       name: "today",
@@ -139,70 +152,87 @@ async function run() {
   let hasFailures = false;
   const summaryResults = [];
 
-  for (const page of pages) {
-    console.log(`\n------------------------------------------------------`);
-    console.log(`1. Verifying Authenticated Load for ${page.path}`);
-    console.log(`------------------------------------------------------`);
-    await verifyAuthenticatedPageLoads(baseUrl, page.path, token, page.expectedHeading);
+  try {
+    for (const page of pages) {
+      console.log(`\n------------------------------------------------------`);
+      console.log(`1. Verifying Authenticated Load for ${page.path}`);
+      console.log(`------------------------------------------------------`);
+      await verifyAuthenticatedPageLoads(baseUrl, page.path, token, page.expectedHeading);
 
-    const perfScores = [];
-    const a11yScores = [];
-    const bpScores = [];
+      const perfScores = [];
+      const a11yScores = [];
+      const bpScores = [];
 
-    console.log(`\n2. Running 3 Lighthouse Audits for ${page.name} (${page.path})`);
-    for (let runIndex = 1; runIndex <= 3; runIndex++) {
-      const outputPath = `./lh-temp-${page.name}-run${runIndex}.json`;
-      const cmd = `npx --yes lighthouse "${baseUrl}${page.path}" --output=json --output-path="${outputPath}" --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu" --extra-headers="{\\"Cookie\\":\\"clinicpilot_session=${token}\\"}" --quiet`;
+      console.log(`\n2. Running 3 Lighthouse Audits for ${page.name} (${page.path})`);
+      for (let runIndex = 1; runIndex <= 3; runIndex++) {
+        try {
+          const res = await lighthouse(`${baseUrl}${page.path}`, {
+            port: chrome.port,
+            output: "json",
+            logLevel: "error",
+            extraHeaders: {
+              Cookie: `clinicpilot_session=${token}`,
+            },
+            formFactor: "mobile",
+            screenEmulation: {
+              mobile: true,
+              width: 390,
+              height: 844,
+              deviceScaleFactor: 3,
+              disabled: false,
+            },
+            throttlingMethod: "simulate",
+          });
 
-      try {
-        execSync(cmd, { stdio: "ignore" });
-        const data = JSON.parse(fs.readFileSync(outputPath, "utf-8"));
-        const perf = Math.round((data.categories.performance?.score || 0) * 100);
-        const a11y = Math.round((data.categories.accessibility?.score || 0) * 100);
-        const bp = Math.round((data.categories["best-practices"]?.score || 0) * 100);
+          const lhr = res.lhr;
+          const perf = Math.round((lhr.categories.performance?.score || 0) * 100);
+          const a11y = Math.round((lhr.categories.accessibility?.score || 0) * 100);
+          const bp = Math.round((lhr.categories["best-practices"]?.score || 0) * 100);
 
-        perfScores.push(perf);
-        a11yScores.push(a11y);
-        bpScores.push(bp);
+          perfScores.push(perf);
+          a11yScores.push(a11y);
+          bpScores.push(bp);
 
-        console.log(`  Run ${runIndex}/3: Perf=${perf}, A11y=${a11y}, BestPractices=${bp}`);
-        if (fs.existsSync(outputPath)) {
-          fs.unlinkSync(outputPath);
+          console.log(`  Run ${runIndex}/3: Perf=${perf}, A11y=${a11y}, BestPractices=${bp}`);
+          await new Promise((r) => setTimeout(r, 200));
+        } catch (err) {
+          console.error(`  Error in Run ${runIndex} for ${page.name}:`, err.message);
+          hasFailures = true;
         }
-        await new Promise((r) => setTimeout(r, 500));
-      } catch (err) {
-        console.error(`  Error in Run ${runIndex} for ${page.name}:`, err.message);
+      }
+
+      const medianPerf = calculateMedian(perfScores);
+      const medianA11y = calculateMedian(a11yScores);
+      const medianBp = calculateMedian(bpScores);
+
+      const perfPass = medianPerf >= page.perfThreshold;
+      const a11yPass = medianA11y >= page.a11yThreshold;
+      const bpPass = medianBp >= page.bpThreshold;
+
+      const pagePassed = perfPass && a11yPass && bpPass;
+      if (!pagePassed) {
         hasFailures = true;
       }
+
+      summaryResults.push({
+        page: page.name,
+        path: page.path,
+        medianPerf,
+        perfThreshold: page.perfThreshold,
+        perfPass,
+        medianA11y,
+        a11yThreshold: page.a11yThreshold,
+        a11yPass,
+        medianBp,
+        bpThreshold: page.bpThreshold,
+        bpPass,
+        passed: pagePassed,
+      });
     }
-
-    const medianPerf = calculateMedian(perfScores);
-    const medianA11y = calculateMedian(a11yScores);
-    const medianBp = calculateMedian(bpScores);
-
-    const perfPass = medianPerf >= page.perfThreshold;
-    const a11yPass = medianA11y >= page.a11yThreshold;
-    const bpPass = medianBp >= page.bpThreshold;
-
-    const pagePassed = perfPass && a11yPass && bpPass;
-    if (!pagePassed) {
-      hasFailures = true;
-    }
-
-    summaryResults.push({
-      page: page.name,
-      path: page.path,
-      medianPerf,
-      perfThreshold: page.perfThreshold,
-      perfPass,
-      medianA11y,
-      a11yThreshold: page.a11yThreshold,
-      a11yPass,
-      medianBp,
-      bpThreshold: page.bpThreshold,
-      bpPass,
-      passed: pagePassed,
-    });
+  } finally {
+    try {
+      await chrome.kill();
+    } catch {}
   }
 
   console.log(`\n======================================================`);

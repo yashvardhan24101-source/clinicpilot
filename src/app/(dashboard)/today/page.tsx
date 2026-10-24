@@ -15,13 +15,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import dynamic from "next/dynamic";
 import { TimeRail } from "@/components/today/time-rail";
-
-const QuickBookSheet = dynamic(
-  () => import("@/components/today/quick-book-sheet").then((m) => m.QuickBookSheet),
-  { ssr: false }
-);
+import { QuickBookSheet } from "@/components/today/quick-book-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { formatClinicDateDisplay, getClinicTodayIST, getClinicTimeDisplayIST } from "@/lib/date-helpers";
@@ -80,10 +75,12 @@ export default function TodayPage() {
       const syncTime = getClinicTimeDisplayIST();
       setLastSyncedTime(syncTime);
 
-      // Save minimal snapshot in IndexedDB
+      // Save minimal snapshot in IndexedDB (deferred to unblock main thread on initial load)
       const activeUserId = user?.user_id || user?.id;
       if (user?.clinic_id && activeUserId) {
-        saveTodaySnapshot(user.clinic_id, activeUserId, todayStr, data, syncTime).catch(() => {});
+        setTimeout(() => {
+          saveTodaySnapshot(user.clinic_id, activeUserId, todayStr, data, syncTime).catch(() => {});
+        }, 50);
       }
 
       return data;
