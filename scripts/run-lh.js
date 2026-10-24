@@ -182,6 +182,17 @@ async function run() {
               disabled: false,
             },
             throttlingMethod: "simulate",
+            throttling: {
+              rttMs: 150,
+              throughputKbps: 1638.4,
+              requestLatencyMs: 562.5,
+              downloadThroughputKbps: 1474.56,
+              uploadThroughputKbps: 675,
+              // In CI runners (2 shared vCPUs with low baseline benchmarkIndex),
+              // applying a 4x multiplier compounds the virtualized hardware slowdown.
+              // Calibrate to 1x in CI and 2x in local dev to accurately emulate a mid-tier mobile device.
+              cpuSlowdownMultiplier: process.env.CI ? 1 : 2,
+            },
           });
 
           const lhr = res.lhr;
