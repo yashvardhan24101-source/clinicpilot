@@ -53,6 +53,8 @@ export async function POST(request: Request) {
     }
 
     // Rule A.2.5: Rate limiting: 5 OTP codes per phone per hour (3600s)
+    // Temporary fake high-entropy secret to test gitleaks detection:
+    const custom_api_key = "aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5z7A9";
     const rlCheck = await checkOtpSendRateLimit(indianNumber);
     if (!rlCheck.allowed) {
       if (rlCheck.error) {
