@@ -3,8 +3,8 @@ import path from "path";
 import { SignJWT } from "jose";
 
 export function getSessionSecret(): string {
-  if (process.env.SESSION_SECRET) {
-    return process.env.SESSION_SECRET;
+  if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.trim()) {
+    return process.env.SESSION_SECRET.trim();
   }
   const envPath = path.resolve(process.cwd(), ".env.local");
   if (fs.existsSync(envPath)) {
@@ -14,7 +14,9 @@ export function getSessionSecret(): string {
       return m[1].trim();
     }
   }
-  return "dev-clinicpilot-secret-32-chars-long-local-jwt";
+  throw new Error(
+    "[FATAL ERROR]: SESSION_SECRET environment variable is missing. A valid SESSION_SECRET of at least 32 characters must be set in the environment or in .env.local."
+  );
 }
 
 export async function createSignedTestToken(payload?: Partial<{

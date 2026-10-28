@@ -94,6 +94,17 @@ npm start
 
 ---
 
+## 🔒 Security & Credential Governance
+
+### Permanent Credential Policy
+> **Permanent Rule**: Never place a real credential in code, tests, fixtures, default fallbacks, comments or commit messages; real values live only in environment variables, and any code reading them must fail clearly when missing.
+
+1. **Environment-Only Secrets**: All live secrets, API tokens (e.g. `FAST2SMS_API_KEY`, `UPSTASH_REDIS_REST_TOKEN`), and session signing keys (`SESSION_SECRET`) reside exclusively in environment variables or `.env.local` (which is strictly `.gitignore`d).
+2. **Fail-Closed Missing Credentials**: Any function or route handler attempting to access a missing production credential must fail immediately with a descriptive error. Code must never silently fall back to insecure default strings or hardcoded mock keys.
+3. **Automated Gitleaks Enforcement**: Pre-commit hooks (`.githooks/pre-commit`) and CI pipelines scan all staged changes and git commits to block credentials prior to merge.
+
+---
+
 ## 📊 Performance, Accessibility & Audits
 
 - **Lighthouse & Accessibility (axe-core)**: Continuous integration audits run on production builds across both unauthenticated public routes and authenticated staff sessions.

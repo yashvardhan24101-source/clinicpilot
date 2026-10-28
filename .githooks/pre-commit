@@ -1,0 +1,43 @@
+#!/bin/sh
+# ClinicPilot Pre-Commit Hook: Prevent Committing Secrets
+echo "[Gitleaks Pre-Commit] Scanning staged changes for credentials..."
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --config=.gitleaks.toml --verbose
+  STATUS=$?
+  if [ $STATUS -ne 0 ]; then
+    echo "❌ [Gitleaks Error]: Secret detected in staged files. Commit aborted."
+    exit $STATUS
+  fi
+else
+  # Fallback runner using node git diff inspection
+  node -e "
+    const { execSync } = require('child_process');
+    try {
+      const diff = execSync('git diff --cached -- \":(exclude).githooks/*\" \":(exclude).gitleaks*\"', { encoding: 'utf-8' });
+      const banned = [
+        new RegExp(['ADFS', 'BQ'].join(''), 'i'),
+        /BEGIN (?:RSA )?PRIVATE KEY/i,
+        /AKIA[0-9A-Z]{16}/,
+        /sk_live_[0-9a-zA-Z]{24}/,
+        /gh[pousr]_[0-9a-zA-Z]{36}/
+      ];
+      for (const pattern of banned) {
+        if (pattern.test(diff)) {
+          console.error('❌ [Security Error]: Staged changes contain forbidden credential pattern:', pattern);
+          process.exit(1);
+        }
+      }
+    } catch (err) {
+      if (err.status) process.exit(err.status);
+    }
+  "
+  STATUS=$?
+  if [ $STATUS -ne 0 ]; then
+    echo "❌ [Pre-Commit Error]: Commit aborted due to credential detection."
+    exit $STATUS
+  fi
+fi
+
+echo "✅ [Gitleaks Pre-Commit] Staged changes passed secret scan."
+exit 0

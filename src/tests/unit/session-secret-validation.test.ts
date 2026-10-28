@@ -44,4 +44,20 @@ describe("Production Startup Check: SESSION_SECRET Validation", () => {
     const result = validateSessionSecret(undefined, { isProduction: false, isDemo: true });
     expect(result).toBe("dev-clinicpilot-secret-32-chars-long-local-jwt");
   });
+
+  it("ensures test-auth-helper getSessionSecret throws clear error when SESSION_SECRET is missing", async () => {
+    const { getSessionSecret } = await import("../e2e/test-auth-helper");
+    const origEnv = process.env.SESSION_SECRET;
+    delete process.env.SESSION_SECRET;
+    try {
+      // If .env.local does not exist or has no secret, it must throw
+      if (!require("fs").existsSync(".env.local")) {
+        expect(() => getSessionSecret()).toThrow(/SESSION_SECRET environment variable is missing/i);
+      }
+    } finally {
+      if (origEnv !== undefined) {
+        process.env.SESSION_SECRET = origEnv;
+      }
+    }
+  });
 });

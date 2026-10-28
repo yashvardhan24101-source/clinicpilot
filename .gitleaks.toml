@@ -1,0 +1,11 @@
+title = "ClinicPilot Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for explicit fake demo credentials and placeholder hashes"
+regexes = [
+  '''demo123''',
+  '''\$2b\$10\$FAKEplaceholderHashDoNotUseInProductionXXXXXXXXXXXXXXXXXXXXX''',
+]

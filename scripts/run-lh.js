@@ -17,7 +17,13 @@ async function getToken() {
       secret = m[1].trim();
     }
   }
-  const secretKey = secret || "dev-clinicpilot-secret-32-chars-long-local-jwt";
+  if (!secret || !secret.trim()) {
+    console.error(
+      "[FATAL ERROR]: SESSION_SECRET environment variable is missing. A valid SESSION_SECRET of at least 32 characters must be set in the environment or in .env.local."
+    );
+    process.exit(1);
+  }
+  const secretKey = secret.trim();
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secretKey),
