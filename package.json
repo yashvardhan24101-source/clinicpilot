@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lhci": "lhci autorun --config=lighthouserc.json",
-    "audit:lh": "node scripts/run-lh.js"
+    "audit:lh": "node scripts/run-lh.js",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.21",

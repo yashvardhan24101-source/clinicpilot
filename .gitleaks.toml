@@ -3,6 +3,12 @@ title = "ClinicPilot Gitleaks Configuration"
 [extend]
 useDefault = true
 
+[[rules]]
+id = "fast2sms-api-key"
+description = "Detected a Fast2SMS telecom gateway API key"
+regex = '''(?i)(?:fast2sms[a-z0-9_-]*[\s\S]{0,80}?['"])([a-zA-Z0-9]{70,90})(?:['"])'''
+secretGroup = 1
+
 [allowlist]
 description = "Allowlist for explicit fake demo credentials and placeholder hashes"
 regexes = [

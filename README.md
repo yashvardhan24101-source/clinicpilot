@@ -99,7 +99,7 @@ npm start
 ### Permanent Credential Policy
 > **Permanent Rule**: Never place a real credential in code, tests, fixtures, default fallbacks, comments or commit messages; real values live only in environment variables, and any code reading them must fail clearly when missing.
 
-1. **Environment-Only Secrets**: All live secrets, API tokens (e.g. `FAST2SMS_API_KEY`, `UPSTASH_REDIS_REST_TOKEN`), and session signing keys (`SESSION_SECRET`) reside exclusively in environment variables or `.env.local` (which is strictly `.gitignore`d).
+1. **Environment-Only Secrets (Vercel)**: Production secrets exist only in Vercel environment variables (configured securely in the Vercel project dashboard). All live secrets, API tokens (e.g. `FAST2SMS_API_KEY`, `UPSTASH_REDIS_REST_TOKEN`), and session signing keys (`SESSION_SECRET`) are injected via environment variables. In local development, values reside exclusively in `.env.local` (which is strictly `.gitignore`d).
 2. **Fail-Closed Missing Credentials**: Any function or route handler attempting to access a missing production credential must fail immediately with a descriptive error. Code must never silently fall back to insecure default strings or hardcoded mock keys.
 3. **Automated Gitleaks Enforcement**: Pre-commit hooks (`.githooks/pre-commit`) and CI pipelines scan all staged changes and git commits to block credentials prior to merge.
 

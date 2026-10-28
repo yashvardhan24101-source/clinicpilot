@@ -13,8 +13,9 @@ Thank you for contributing to ClinicPilot. To ensure security, multi-tenant isol
 1. **Zero Real Credentials in Code**:
    - Under no circumstances should real API keys (SMS gateways, Fast2SMS, Twilio, Redis/Upstash, AWS, Google Cloud, Stripe) or cryptographic secrets be committed.
    - Do not commit secrets in test fixtures, mock handlers, default parameter fallbacks, or comments.
-2. **Environment Variable Enforcement**:
-   - Secrets must be loaded exclusively via `process.env`.
+2. **Environment Variable Enforcement & Production Storage**:
+   - Production secrets exist only in Vercel environment variables (configured via the Vercel dashboard or CLI). They must never be placed in source code, committed files, Dockerfiles, or build artifacts.
+   - Secrets are accessed at runtime exclusively through `process.env`.
    - Any service or helper requiring credentials must fail closed (throw or return a 500/503) if the expected environment variable is absent.
    - Default fallback strings (e.g. `secret || "fallback-secret"`) are strictly forbidden.
 3. **Local Development Configuration**:
