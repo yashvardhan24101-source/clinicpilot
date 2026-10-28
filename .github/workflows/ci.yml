@@ -9,7 +9,7 @@ on:
 jobs:
   test-and-audit:
     name: Build, Test & Lighthouse Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     env:
       NODE_ENV: test
@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: Generate Random Per-Run Session Secret
