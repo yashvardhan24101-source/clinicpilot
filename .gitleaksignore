@@ -3,5 +3,5 @@ dab001d836ab4955b51b33a345dd9977066c867e:src/tests/unit/auth-security.test.ts:ge
 dab001d836ab4955b51b33a345dd9977066c867e:src/tests/unit/rate-limiter-fail-closed.test.ts:generic-api-key:77
 dab001d836ab4955b51b33a345dd9977066c867e:src/tests/unit/session-secret-validation.test.ts:generic-api-key:38
 
-# Historical Fast2SMS gateway key from commit 87b8244. The key was rotated on 2026-10-29; this entry exists only for the historical commit.
+# The key was revoked and replaced; this entry exists only for the historical commit.
 87b82442b7a7e50c7b57dbc03dfb77ae5cd7a2a7:src/app/api/auth/otp/send/route.ts:fast2sms-api-key:63

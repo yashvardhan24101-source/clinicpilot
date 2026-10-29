@@ -12,7 +12,7 @@
     "test:e2e": "playwright test",
     "lhci": "lhci autorun --config=lighthouserc.json",
     "audit:lh": "node scripts/run-lh.js",
-    "prepare": "git config core.hooksPath .githooks"
+    "prepare": "git config core.hooksPath .githooks || exit 0"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.21",
