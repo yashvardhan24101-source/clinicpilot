@@ -14,5 +14,11 @@ export async function register() {
     // Production startup security checks
     const { validateSessionSecret } = await import("@/lib/auth-session");
     validateSessionSecret(process.env.SESSION_SECRET);
+
+    // Database RLS & Least-Privilege Verification (when DATABASE_URL is configured)
+    if (process.env.DATABASE_URL) {
+      const { verifyAppDatabaseSecurity } = await import("@/lib/db");
+      await verifyAppDatabaseSecurity();
+    }
   }
 }
