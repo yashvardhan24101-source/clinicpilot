@@ -4,11 +4,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "btree_gist";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Revoke any default privileges for clinicpilot_app in public schema to enforce explicit grants only
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM clinicpilot_app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM clinicpilot_app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON ROUTINES FROM clinicpilot_app;
-
 -- Create restricted runtime application role clinicpilot_app with NOBYPASSRLS
 -- Password is dynamically retrieved from session variable app.db_scram_verifier (precomputed SCRAM-SHA-256 verifier, plaintext password is never sent or logged)
 DO $$
