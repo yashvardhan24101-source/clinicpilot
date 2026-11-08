@@ -41,7 +41,7 @@ describe.runIf(isDbAvailable)("M2: Multi-Tenant Row-Level Security & Context Iso
     // Seed Clinic A
     const resA = await adminClient.query(
       `INSERT INTO clinics (name, slug, short_code, city)
-       VALUES ('Clinic Alpha', 'clinic-alpha-m2', 'CA01', 'Bengaluru')
+       VALUES ('Clinic Alpha', 'clinic-alpha-iso', 'ISO1', 'Bengaluru')
        RETURNING id;`
     );
     clinicAId = resA.rows[0].id;
@@ -49,7 +49,7 @@ describe.runIf(isDbAvailable)("M2: Multi-Tenant Row-Level Security & Context Iso
     // Seed Clinic B
     const resB = await adminClient.query(
       `INSERT INTO clinics (name, slug, short_code, city)
-       VALUES ('Clinic Beta', 'clinic-beta-m2', 'CB01', 'Hyderabad')
+       VALUES ('Clinic Beta', 'clinic-beta-iso', 'ISO2', 'Hyderabad')
        RETURNING id;`
     );
     clinicBId = resB.rows[0].id;
@@ -66,7 +66,7 @@ describe.runIf(isDbAvailable)("M2: Multi-Tenant Row-Level Security & Context Iso
     // Patient in Clinic A
     const patRes = await adminClient.query(
       `INSERT INTO patients (clinic_id, name, phone)
-       VALUES ($1, 'Alpha Patient', '+919876543210')
+       VALUES ($1, 'Alpha Patient', '+919876599901')
        RETURNING id;`,
       [clinicAId]
     );
@@ -84,7 +84,7 @@ describe.runIf(isDbAvailable)("M2: Multi-Tenant Row-Level Security & Context Iso
     // Patient Portal Account A linked to Patient A
     const accARes = await adminClient.query(
       `INSERT INTO patient_accounts (phone, name, email)
-       VALUES ('+919876543210', 'Alpha Patient Portal', 'alpha.patient@example.com')
+       VALUES ('+919876599901', 'Alpha Patient Portal', 'iso.alpha.patient@example.com')
        RETURNING id;`
     );
     patientAccountAId = accARes.rows[0].id;
@@ -98,7 +98,7 @@ describe.runIf(isDbAvailable)("M2: Multi-Tenant Row-Level Security & Context Iso
     // Patient Portal Account B (unlinked to Clinic A)
     const accBRes = await adminClient.query(
       `INSERT INTO patient_accounts (phone, name, email)
-       VALUES ('+919876543211', 'Beta Patient Portal', 'beta.patient@example.com')
+       VALUES ('+919876599902', 'Beta Patient Portal', 'iso.beta.patient@example.com')
        RETURNING id;`
     );
     patientAccountBId = accBRes.rows[0].id;
