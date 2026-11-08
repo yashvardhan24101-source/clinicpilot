@@ -77,7 +77,11 @@ jobs:
         run: npm run test:unit
 
       - name: Run Database Integration & RLS Isolation Tests
-        run: npm run test:integration
+        run: |
+          npm run test:integration 2>&1 | tee integration.log || (echo '```' >> $GITHUB_STEP_SUMMARY && cat integration.log >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && exit 1)
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat integration.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Build Next.js Production App
         run: npm run build
