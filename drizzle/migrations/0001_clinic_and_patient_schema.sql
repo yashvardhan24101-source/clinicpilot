@@ -12,6 +12,17 @@ CREATE TABLE IF NOT EXISTS clinics (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Seed fixed platform system clinic for super_admin platform context
+INSERT INTO clinics (id, name, slug, short_code, city, timezone)
+VALUES (
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  'ClinicPilot Platform System',
+  'system-platform',
+  'SYS0',
+  'Bengaluru',
+  'Asia/Kolkata'
+) ON CONFLICT (id) DO NOTHING;
+
 -- 2. Staff Users
 CREATE TABLE IF NOT EXISTS staff_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,14 +113,12 @@ CREATE INDEX IF NOT EXISTS patients_clinic_id_idx ON patients(clinic_id);
 -- Phone numbers are unique within each clinic
 CREATE UNIQUE INDEX IF NOT EXISTS patients_clinic_phone_idx ON patients(clinic_id, phone);
 
--- 8. Consents
+-- 8. Clinic-Scoped Consents (WhatsApp communication & treatment consents)
 CREATE TABLE IF NOT EXISTS consents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  clinic_id uuid REFERENCES clinics(id) ON DELETE CASCADE,
-  patient_id uuid REFERENCES patients(id) ON DELETE CASCADE,
-  account_id uuid,
-  family_member_id uuid,
-  consent_type text NOT NULL,
+  clinic_id uuid NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+  patient_id uuid NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  consent_type text NOT NULL CHECK (consent_type IN ('whatsapp_comm', 'treatment_consent', 'teleconsult_consent', 'dlt_sms')),
   granted boolean NOT NULL DEFAULT true,
   consent_text_version text NOT NULL DEFAULT 'v1.0',
   created_at timestamptz NOT NULL DEFAULT now()
@@ -117,7 +126,6 @@ CREATE TABLE IF NOT EXISTS consents (
 
 CREATE INDEX IF NOT EXISTS consents_clinic_id_idx ON consents(clinic_id);
 CREATE INDEX IF NOT EXISTS consents_patient_id_idx ON consents(patient_id);
-CREATE INDEX IF NOT EXISTS consents_account_id_idx ON consents(account_id);
 
 -- 9. Appointments
 CREATE TABLE IF NOT EXISTS appointments (
@@ -282,14 +290,14 @@ CREATE INDEX IF NOT EXISTS password_reset_tokens_user_id_idx ON password_reset_t
 -- 19. Clinic Requests
 CREATE TABLE IF NOT EXISTS clinic_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  clinic_name text NOT NULL,
-  city text NOT NULL,
-  owner_name text NOT NULL,
-  owner_email text NOT NULL,
-  owner_phone text NOT NULL,
-  registration_number text,
+  clinic_name text NOT NULL CHECK (char_length(clinic_name) BETWEEN 2 AND 100),
+  city text NOT NULL CHECK (char_length(city) BETWEEN 2 AND 60),
+  owner_name text NOT NULL CHECK (char_length(owner_name) BETWEEN 2 AND 100),
+  owner_email text NOT NULL CHECK (char_length(owner_email) BETWEEN 5 AND 255),
+  owner_phone text NOT NULL CHECK (char_length(owner_phone) BETWEEN 10 AND 20),
+  registration_number text CHECK (registration_number IS NULL OR char_length(registration_number) BETWEEN 3 AND 50),
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-  review_notes text,
+  review_notes text CHECK (review_notes IS NULL OR char_length(review_notes) <= 1000),
   created_at timestamptz NOT NULL DEFAULT now(),
   reviewed_at timestamptz
 );
@@ -316,7 +324,20 @@ CREATE TABLE IF NOT EXISTS patient_identities (
 
 CREATE INDEX IF NOT EXISTS patient_identities_account_id_idx ON patient_identities(account_id);
 
--- 22. Patient Account Links
+-- 22. Patient Link Codes (One-Time verification codes to authorize linking a patient to a portal account)
+CREATE TABLE IF NOT EXISTS patient_link_codes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinic_id uuid NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+  patient_id uuid NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS patient_link_codes_lookup_idx ON patient_link_codes(clinic_id, patient_id, code_hash);
+
+-- 23. Patient Account Links
 CREATE TABLE IF NOT EXISTS patient_account_links (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id uuid NOT NULL REFERENCES patient_accounts(id) ON DELETE CASCADE,
@@ -331,7 +352,7 @@ CREATE INDEX IF NOT EXISTS patient_account_links_account_id_idx ON patient_accou
 CREATE INDEX IF NOT EXISTS patient_account_links_clinic_id_idx ON patient_account_links(clinic_id);
 CREATE INDEX IF NOT EXISTS patient_account_links_patient_id_idx ON patient_account_links(patient_id);
 
--- 23. Patient Sessions
+-- 24. Patient Sessions
 CREATE TABLE IF NOT EXISTS patient_sessions (
   jti uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id uuid NOT NULL REFERENCES patient_accounts(id) ON DELETE CASCADE,
@@ -342,7 +363,7 @@ CREATE TABLE IF NOT EXISTS patient_sessions (
 
 CREATE INDEX IF NOT EXISTS patient_sessions_account_id_idx ON patient_sessions(account_id);
 
--- 24. Family Members
+-- 25. Family Members
 CREATE TABLE IF NOT EXISTS family_members (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   guardian_account_id uuid NOT NULL REFERENCES patient_accounts(id) ON DELETE CASCADE,
@@ -354,7 +375,7 @@ CREATE TABLE IF NOT EXISTS family_members (
 
 CREATE INDEX IF NOT EXISTS family_members_guardian_account_id_idx ON family_members(guardian_account_id);
 
--- 25. Magic Link Tokens
+-- 26. Magic Link Tokens
 CREATE TABLE IF NOT EXISTS magic_link_tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email text NOT NULL,
@@ -364,3 +385,16 @@ CREATE TABLE IF NOT EXISTS magic_link_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS magic_link_tokens_email_idx ON magic_link_tokens(email);
+
+-- 27. Patient Account Consents (Account-scoped, append-only: portal terms, privacy, guardian consent)
+CREATE TABLE IF NOT EXISTS patient_account_consents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id uuid NOT NULL REFERENCES patient_accounts(id) ON DELETE CASCADE,
+  family_member_id uuid REFERENCES family_members(id) ON DELETE CASCADE,
+  consent_type text NOT NULL CHECK (consent_type IN ('portal_terms', 'privacy_policy', 'guardian_consent', 'data_sharing')),
+  consent_text_version text NOT NULL DEFAULT 'Draft - pending legal review',
+  granted boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS patient_account_consents_account_id_idx ON patient_account_consents(account_id);

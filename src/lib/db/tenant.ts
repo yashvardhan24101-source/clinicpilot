@@ -11,6 +11,7 @@ export interface SuperAdminSessionUser {
  * Executes a callback within an isolated clinic tenant context inside a PostgreSQL transaction.
  * Context is set strictly using `SELECT set_config('app.clinic_id', $1, true)` with bound parameters.
  * `is_local = true` ensures the setting applies only to the current transaction.
+ * Strictly asserts that patient context is NOT active in the same transaction.
  */
 export async function withClinicContext<T>(
   clinicId: string,
@@ -25,9 +26,20 @@ export async function withClinicContext<T>(
 
   try {
     await client.query("BEGIN;");
+
+    // Refuse if patient context is already active in this transaction
+    const existingPatient = await client.query(
+      "SELECT NULLIF(current_setting('app.patient_account_id', true), '') as patient_id;"
+    );
+    if (existingPatient.rows[0]?.patient_id) {
+      throw new Error(
+        "MUTUALLY_EXCLUSIVE_CONTEXT: Cannot set clinic context when patient context is already active in the same transaction."
+      );
+    }
+
     await client.query("SELECT set_config('app.clinic_id', $1, true);", [clinicId]);
-    await client.query("SELECT set_config('app.patient_account_id', '', true);");
     await client.query("SELECT set_config('app.is_super_admin', 'false', true);");
+    await client.query("SELECT assert_mutually_exclusive_context();");
 
     const result = await fn(client);
     await client.query("COMMIT;");
@@ -51,6 +63,7 @@ export async function withClinicContext<T>(
 /**
  * Executes a callback within an isolated patient portal account context inside a PostgreSQL transaction.
  * Context is set strictly using `SELECT set_config('app.patient_account_id', $1, true)` with bound parameters.
+ * Strictly asserts that clinic context is NOT active in the same transaction.
  */
 export async function withPatientContext<T>(
   accountId: string,
@@ -65,9 +78,20 @@ export async function withPatientContext<T>(
 
   try {
     await client.query("BEGIN;");
-    await client.query("SELECT set_config('app.clinic_id', '', true);");
+
+    // Refuse if clinic context is already active in this transaction
+    const existingClinic = await client.query(
+      "SELECT NULLIF(current_setting('app.clinic_id', true), '') as clinic_id;"
+    );
+    if (existingClinic.rows[0]?.clinic_id) {
+      throw new Error(
+        "MUTUALLY_EXCLUSIVE_CONTEXT: Cannot set patient context when clinic context is already active in the same transaction."
+      );
+    }
+
     await client.query("SELECT set_config('app.patient_account_id', $1, true);", [accountId]);
     await client.query("SELECT set_config('app.is_super_admin', 'false', true);");
+    await client.query("SELECT assert_mutually_exclusive_context();");
 
     const result = await fn(client);
     await client.query("COMMIT;");
@@ -108,10 +132,11 @@ export async function withSuperAdminContext<T>(
   try {
     await client.query("BEGIN;");
 
-    // Super-admin access is strictly audited before granting cross-tenant privilege
+    // Super-admin access is strictly audited before granting cross-tenant privilege.
+    // clinic_id is explicitly NULL for platform events.
     await client.query(
-      `INSERT INTO audit_log (actor_id, actor_role, action, resource, details)
-       VALUES ($1, 'super_admin', $2, 'platform', $3);`,
+      `INSERT INTO audit_log (clinic_id, actor_id, actor_role, action, resource, details)
+       VALUES (NULL, $1, 'super_admin', $2, 'platform', $3);`,
       [session.userId || "super_admin", `super_admin:${action}`, JSON.stringify(details)]
     );
 

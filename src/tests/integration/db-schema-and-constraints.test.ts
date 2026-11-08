@@ -312,4 +312,76 @@ describe("M1: Real PostgreSQL Schema, Constraints & Least Privilege", () => {
     expect(checkResult.ownedTableCount).toBe(0);
     expect(checkResult.behavioralZeroCheck).toBe(true);
   });
+
+  it("9. clinic_requests Length CHECK Constraints: rejects out-of-bound field lengths", async () => {
+    // Single character clinic_name should fail char_length BETWEEN 2 AND 100
+    let shortNameErr: any = null;
+    try {
+      await adminClient.query(
+        `INSERT INTO clinic_requests (clinic_name, city, owner_name, owner_email, owner_phone)
+         VALUES ('A', 'Bengaluru', 'Dr. Bob', 'bob@clinic.in', '+919876543210');`
+      );
+    } catch (err: any) {
+      shortNameErr = err;
+    }
+    expect(shortNameErr).toBeDefined();
+    expect(shortNameErr.code).toBe("23514"); // check_violation
+
+    // Valid clinic_request insertion succeeds
+    const validRes = await adminClient.query(
+      `INSERT INTO clinic_requests (clinic_name, city, owner_name, owner_email, owner_phone)
+       VALUES ('Healthy Smiles Clinic', 'Bengaluru', 'Dr. Bob Sharma', 'bob.sharma@clinic.in', '+919876543210')
+       RETURNING id;`
+    );
+    expect(validRes.rows.length).toBe(1);
+  });
+
+  it("10. patient_account_consents Append-Only: app role cannot UPDATE or DELETE account consents", async () => {
+    const appClient = await appPool.connect();
+    try {
+      // Create test account and consent via adminClient
+      const accRes = await adminClient.query(
+        `INSERT INTO patient_accounts (name, email, phone)
+         VALUES ('Consent Patient', 'consent.patient@test.in', '+919876500008')
+         RETURNING id;`
+      );
+      const accId = accRes.rows[0].id;
+
+      const consentRes = await adminClient.query(
+        `INSERT INTO patient_account_consents (account_id, consent_type, consent_text_version)
+         VALUES ($1, 'portal_terms', 'Draft - pending legal review')
+         RETURNING id;`,
+        [accId]
+      );
+      const consentId = consentRes.rows[0].id;
+
+      // UPDATE attempt by app role fails with 42501 (insufficient privilege)
+      let updateErr: any = null;
+      try {
+        await appClient.query(
+          `UPDATE patient_account_consents SET granted = false WHERE id = $1;`,
+          [consentId]
+        );
+      } catch (err: any) {
+        updateErr = err;
+      }
+      expect(updateErr).toBeDefined();
+      expect(updateErr.code).toBe("42501");
+
+      // DELETE attempt by app role fails with 42501
+      let deleteErr: any = null;
+      try {
+        await appClient.query(
+          `DELETE FROM patient_account_consents WHERE id = $1;`,
+          [consentId]
+        );
+      } catch (err: any) {
+        deleteErr = err;
+      }
+      expect(deleteErr).toBeDefined();
+      expect(deleteErr.code).toBe("42501");
+    } finally {
+      appClient.release();
+    }
+  });
 });
