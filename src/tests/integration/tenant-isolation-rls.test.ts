@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client, Pool } from "pg";
 import {
@@ -12,13 +13,11 @@ import { clinicRepo } from "@/lib/db/repositories/clinic-repo";
 const migrationsUrl = process.env.DATABASE_URL_MIGRATIONS;
 const appUrl = process.env.DATABASE_URL;
 
-const isDbAvailable = Boolean(migrationsUrl && appUrl);
-
-if (process.env.CI && !isDbAvailable) {
-  throw new Error("DATABASE_URL and DATABASE_URL_MIGRATIONS must be set in CI for integration tests");
+if (!migrationsUrl || !appUrl) {
+  throw new Error("DATABASE_URL and DATABASE_URL_MIGRATIONS must be set for integration tests");
 }
 
-describe.runIf(isDbAvailable)("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
+describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
   let adminClient: Client;
   let appPool: Pool;
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client, Pool } from "pg";
 import { verifyAppDatabaseSecurity } from "@/lib/db";
@@ -5,13 +6,11 @@ import { verifyAppDatabaseSecurity } from "@/lib/db";
 const migrationsUrl = process.env.DATABASE_URL_MIGRATIONS;
 const appUrl = process.env.DATABASE_URL;
 
-const isDbAvailable = Boolean(migrationsUrl && appUrl);
-
-if (process.env.CI && !isDbAvailable) {
-  throw new Error("DATABASE_URL and DATABASE_URL_MIGRATIONS must be set in CI for integration tests");
+if (!migrationsUrl || !appUrl) {
+  throw new Error("DATABASE_URL and DATABASE_URL_MIGRATIONS must be set for integration tests");
 }
 
-describe.runIf(isDbAvailable)("M1: Real PostgreSQL Schema, Constraints & Least Privilege", () => {
+describe("M1: Real PostgreSQL Schema, Constraints & Least Privilege", () => {
   let adminClient: Client;
   let appPool: Pool;
 

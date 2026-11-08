@@ -77,12 +77,7 @@ jobs:
         run: npm run test:unit
 
       - name: Run Database Integration & RLS Isolation Tests
-        run: |
-          npm run test:integration 2>&1 | tee integration-test.log
-          if grep -q -E "[1-9][0-9]* skipped" integration-test.log; then
-            echo "::error::Integration tests were skipped in CI!"
-            exit 1
-          fi
+        run: npm run test:integration
 
       - name: Build Next.js Production App
         run: npm run build
