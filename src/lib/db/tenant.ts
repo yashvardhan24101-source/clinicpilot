@@ -110,9 +110,9 @@ export async function withSuperAdminContext<T>(
 
     // Super-admin access is strictly audited before granting cross-tenant privilege
     await client.query(
-      `INSERT INTO audit_log (user_id, action, target_table, details)
-       VALUES ($1, $2, 'platform', $3);`,
-      [session.userId || null, `super_admin:${action}`, JSON.stringify(details)]
+      `INSERT INTO audit_log (actor_id, actor_role, action, resource, details)
+       VALUES ($1, 'super_admin', $2, 'platform', $3);`,
+      [session.userId || "super_admin", `super_admin:${action}`, JSON.stringify(details)]
     );
 
     await client.query("SELECT set_config('app.is_super_admin', 'true', true);");

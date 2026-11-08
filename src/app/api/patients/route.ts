@@ -77,8 +77,7 @@ export async function POST(request: Request) {
     const created = await patientsRepo.createPatient(client, clinicId, {
       name: body.name || "New Patient",
       phone: body.phone || "+91 99999 00000",
-      gender: body.gender || undefined,
-      age: body.age || undefined,
+      language: body.language || "en",
     });
     return NextResponse.json(created, { status: 201 });
   });

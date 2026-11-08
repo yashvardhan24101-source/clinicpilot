@@ -3,34 +3,36 @@ import { PoolClient } from "pg";
 export interface ConversationRow {
   id: string;
   clinic_id: string;
-  patient_id?: string | null;
-  patient_phone: string;
-  patient_name?: string | null;
-  status: string;
-  last_message_at: string;
+  patient_id: string;
+  state: string;
+  last_message?: string | null;
+  last_message_time?: string | null;
+  unread_count: number;
   created_at: string;
-  updated_at: string;
+  // Join
+  patient_name?: string;
+  patient_phone?: string;
 }
 
 export interface MessageRow {
   id: string;
   clinic_id: string;
   conversation_id: string;
-  sender_type: string;
-  sender_id?: string | null;
+  sender: string;
   content: string;
-  media_url?: string | null;
-  status: string;
+  delivery_status: string;
   created_at: string;
 }
 
 export const conversationsRepo = {
   async listConversations(client: PoolClient, clinicId: string): Promise<ConversationRow[]> {
     const res = await client.query(
-      `SELECT id, clinic_id, patient_id, patient_phone, patient_name, status, last_message_at, created_at, updated_at
-       FROM conversations
-       WHERE clinic_id = $1
-       ORDER BY last_message_at DESC;`,
+      `SELECT c.id, c.clinic_id, c.patient_id, c.state, c.last_message, c.last_message_time, c.unread_count, c.created_at,
+              p.name AS patient_name, p.phone AS patient_phone
+       FROM conversations c
+       JOIN patients p ON c.patient_id = p.id
+       WHERE c.clinic_id = $1
+       ORDER BY c.last_message_time DESC;`,
       [clinicId]
     );
     return res.rows;
@@ -42,9 +44,11 @@ export const conversationsRepo = {
     conversationId: string
   ): Promise<ConversationRow | null> {
     const res = await client.query(
-      `SELECT id, clinic_id, patient_id, patient_phone, patient_name, status, last_message_at, created_at, updated_at
-       FROM conversations
-       WHERE clinic_id = $1 AND id = $2;`,
+      `SELECT c.id, c.clinic_id, c.patient_id, c.state, c.last_message, c.last_message_time, c.unread_count, c.created_at,
+              p.name AS patient_name, p.phone AS patient_phone
+       FROM conversations c
+       JOIN patients p ON c.patient_id = p.id
+       WHERE c.clinic_id = $1 AND c.id = $2;`,
       [clinicId, conversationId]
     );
     return res.rows[0] || null;
@@ -56,7 +60,7 @@ export const conversationsRepo = {
     conversationId: string
   ): Promise<MessageRow[]> {
     const res = await client.query(
-      `SELECT id, clinic_id, conversation_id, sender_type, sender_id, content, media_url, status, created_at
+      `SELECT id, clinic_id, conversation_id, sender, content, delivery_status, created_at
        FROM messages
        WHERE clinic_id = $1 AND conversation_id = $2
        ORDER BY created_at ASC;`,
@@ -70,32 +74,23 @@ export const conversationsRepo = {
     clinicId: string,
     data: {
       conversation_id: string;
-      sender_type: string;
-      sender_id?: string | null;
+      sender: "patient" | "bot" | "staff";
       content: string;
-      media_url?: string | null;
     }
   ): Promise<MessageRow> {
     const res = await client.query(
-      `INSERT INTO messages (clinic_id, conversation_id, sender_type, sender_id, content, media_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'delivered')
-       RETURNING id, clinic_id, conversation_id, sender_type, sender_id, content, media_url, status, created_at;`,
-      [
-        clinicId,
-        data.conversation_id,
-        data.sender_type,
-        data.sender_id ?? null,
-        data.content,
-        data.media_url ?? null,
-      ]
+      `INSERT INTO messages (clinic_id, conversation_id, sender, content, delivery_status)
+       VALUES ($1, $2, $3, $4, 'delivered')
+       RETURNING id, clinic_id, conversation_id, sender, content, delivery_status, created_at;`,
+      [clinicId, data.conversation_id, data.sender, data.content]
     );
 
-    // Update last_message_at on the conversation
+    // Update last_message on conversation
     await client.query(
       `UPDATE conversations
-       SET last_message_at = now(), updated_at = now()
+       SET last_message = $3, last_message_time = now()
        WHERE clinic_id = $1 AND id = $2;`,
-      [clinicId, data.conversation_id]
+      [clinicId, data.conversation_id, data.content]
     );
 
     return res.rows[0];

@@ -5,19 +5,20 @@ export interface DoctorRow {
   clinic_id: string;
   name: string;
   specialty: string;
+  qualifications?: string | null;
+  experience_years?: number | null;
+  consultation_fee?: number | null;
+  video_fee?: number | null;
+  color_tag: string;
+  active: boolean;
   phone?: string | null;
-  email?: string | null;
-  registration_number?: string | null;
-  color?: string | null;
-  is_active: boolean;
   created_at: string;
-  updated_at: string;
 }
 
 export const doctorsRepo = {
   async listDoctors(client: PoolClient, clinicId: string): Promise<DoctorRow[]> {
     const res = await client.query(
-      `SELECT id, clinic_id, name, specialty, phone, email, registration_number, color, is_active, created_at, updated_at
+      `SELECT id, clinic_id, name, specialty, qualifications, experience_years, consultation_fee, video_fee, color_tag, active, phone, created_at
        FROM doctors
        WHERE clinic_id = $1
        ORDER BY name ASC;`,
@@ -28,7 +29,7 @@ export const doctorsRepo = {
 
   async getDoctorById(client: PoolClient, clinicId: string, doctorId: string): Promise<DoctorRow | null> {
     const res = await client.query(
-      `SELECT id, clinic_id, name, specialty, phone, email, registration_number, color, is_active, created_at, updated_at
+      `SELECT id, clinic_id, name, specialty, qualifications, experience_years, consultation_fee, video_fee, color_tag, active, phone, created_at
        FROM doctors
        WHERE clinic_id = $1 AND id = $2;`,
       [clinicId, doctorId]
@@ -39,13 +40,32 @@ export const doctorsRepo = {
   async createDoctor(
     client: PoolClient,
     clinicId: string,
-    data: { name: string; specialty: string; phone?: string; email?: string; registration_number?: string; color?: string }
+    data: {
+      name: string;
+      specialty: string;
+      qualifications?: string;
+      experience_years?: number;
+      consultation_fee?: number;
+      video_fee?: number;
+      color_tag?: string;
+      phone?: string;
+    }
   ): Promise<DoctorRow> {
     const res = await client.query(
-      `INSERT INTO doctors (clinic_id, name, specialty, phone, email, registration_number, color)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, clinic_id, name, specialty, phone, email, registration_number, color, is_active, created_at, updated_at;`,
-      [clinicId, data.name, data.specialty, data.phone ?? null, data.email ?? null, data.registration_number ?? null, data.color ?? null]
+      `INSERT INTO doctors (clinic_id, name, specialty, qualifications, experience_years, consultation_fee, video_fee, color_tag, phone)
+       VALUES ($1, $2, $3, $4, COALESCE($5, 0), COALESCE($6, 0), COALESCE($7, 0), COALESCE($8, '#3B82F6'), $9)
+       RETURNING id, clinic_id, name, specialty, qualifications, experience_years, consultation_fee, video_fee, color_tag, active, phone, created_at;`,
+      [
+        clinicId,
+        data.name,
+        data.specialty,
+        data.qualifications ?? null,
+        data.experience_years ?? null,
+        data.consultation_fee ?? null,
+        data.video_fee ?? null,
+        data.color_tag ?? null,
+        data.phone ?? null,
+      ]
     );
     return res.rows[0];
   },

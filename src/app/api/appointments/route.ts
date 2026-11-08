@@ -165,8 +165,7 @@ export async function POST(request: Request) {
       scheduled_end: scheduledEnd,
       status: body.status || "booked",
       token_number: body.token_number ?? null,
-      chief_complaint: body.notes ?? null,
-      internal_notes: null,
+      notes: body.notes ?? null,
     });
 
     return NextResponse.json(created, { status: 201 });

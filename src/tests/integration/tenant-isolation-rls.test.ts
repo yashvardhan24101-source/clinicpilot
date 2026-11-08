@@ -276,7 +276,7 @@ describe.runIf(isDbAvailable)("M2: Multi-Tenant Row-Level Security & Context Iso
        ORDER BY created_at DESC LIMIT 1;`
     );
     expect(auditRes.rows.length).toBe(1);
-    expect(auditRes.rows[0].user_id).toBe("usr-super-admin-0");
+    expect(auditRes.rows[0].actor_id).toBe("usr-super-admin-0");
   });
 
   it("10. Patient Context Isolation: Patient A sees linked appointment via view, Patient B sees zero", async () => {

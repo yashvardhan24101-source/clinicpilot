@@ -5,13 +5,10 @@ export interface PatientRow {
   clinic_id: string;
   name: string;
   phone: string;
-  email?: string | null;
-  gender?: string | null;
-  age?: number | null;
-  blood_group?: string | null;
-  medical_history?: any;
+  language: string;
+  total_visits: number;
+  last_visit?: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 export const patientsRepo = {
@@ -19,7 +16,7 @@ export const patientsRepo = {
     if (search && search.trim()) {
       const term = `%${search.trim()}%`;
       const res = await client.query(
-        `SELECT id, clinic_id, name, phone, email, gender, age, blood_group, medical_history, created_at, updated_at
+        `SELECT id, clinic_id, name, phone, language, total_visits, last_visit, created_at
          FROM patients
          WHERE clinic_id = $1 AND (name ILIKE $2 OR phone ILIKE $2)
          ORDER BY name ASC;`,
@@ -29,7 +26,7 @@ export const patientsRepo = {
     }
 
     const res = await client.query(
-      `SELECT id, clinic_id, name, phone, email, gender, age, blood_group, medical_history, created_at, updated_at
+      `SELECT id, clinic_id, name, phone, language, total_visits, last_visit, created_at
        FROM patients
        WHERE clinic_id = $1
        ORDER BY name ASC;`,
@@ -40,7 +37,7 @@ export const patientsRepo = {
 
   async getPatientById(client: PoolClient, clinicId: string, patientId: string): Promise<PatientRow | null> {
     const res = await client.query(
-      `SELECT id, clinic_id, name, phone, email, gender, age, blood_group, medical_history, created_at, updated_at
+      `SELECT id, clinic_id, name, phone, language, total_visits, last_visit, created_at
        FROM patients
        WHERE clinic_id = $1 AND id = $2;`,
       [clinicId, patientId]
@@ -51,22 +48,13 @@ export const patientsRepo = {
   async createPatient(
     client: PoolClient,
     clinicId: string,
-    data: { name: string; phone: string; email?: string; gender?: string; age?: number; blood_group?: string; medical_history?: any }
+    data: { name: string; phone: string; language?: string }
   ): Promise<PatientRow> {
     const res = await client.query(
-      `INSERT INTO patients (clinic_id, name, phone, email, gender, age, blood_group, medical_history)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, clinic_id, name, phone, email, gender, age, blood_group, medical_history, created_at, updated_at;`,
-      [
-        clinicId,
-        data.name,
-        data.phone,
-        data.email ?? null,
-        data.gender ?? null,
-        data.age ?? null,
-        data.blood_group ?? null,
-        data.medical_history ? JSON.stringify(data.medical_history) : null,
-      ]
+      `INSERT INTO patients (clinic_id, name, phone, language)
+       VALUES ($1, $2, $3, COALESCE($4, 'en'))
+       RETURNING id, clinic_id, name, phone, language, total_visits, last_visit, created_at;`,
+      [clinicId, data.name, data.phone, data.language ?? null]
     );
     return res.rows[0];
   },
@@ -81,25 +69,10 @@ export const patientsRepo = {
       `UPDATE patients
        SET name = COALESCE($3, name),
            phone = COALESCE($4, phone),
-           email = COALESCE($5, email),
-           gender = COALESCE($6, gender),
-           age = COALESCE($7, age),
-           blood_group = COALESCE($8, blood_group),
-           medical_history = COALESCE($9, medical_history),
-           updated_at = now()
+           language = COALESCE($5, language)
        WHERE clinic_id = $1 AND id = $2
-       RETURNING id, clinic_id, name, phone, email, gender, age, blood_group, medical_history, created_at, updated_at;`,
-      [
-        clinicId,
-        patientId,
-        data.name ?? null,
-        data.phone ?? null,
-        data.email ?? null,
-        data.gender ?? null,
-        data.age ?? null,
-        data.blood_group ?? null,
-        data.medical_history ? JSON.stringify(data.medical_history) : null,
-      ]
+       RETURNING id, clinic_id, name, phone, language, total_visits, last_visit, created_at;`,
+      [clinicId, patientId, data.name ?? null, data.phone ?? null, data.language ?? null]
     );
     return res.rows[0] || null;
   },
