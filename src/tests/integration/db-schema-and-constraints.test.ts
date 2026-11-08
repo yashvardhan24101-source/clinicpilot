@@ -7,6 +7,10 @@ const appUrl = process.env.DATABASE_URL;
 
 const isDbAvailable = Boolean(migrationsUrl && appUrl);
 
+if (process.env.CI && !isDbAvailable) {
+  throw new Error("DATABASE_URL and DATABASE_URL_MIGRATIONS must be set in CI for integration tests");
+}
+
 describe.runIf(isDbAvailable)("M1: Real PostgreSQL Schema, Constraints & Least Privilege", () => {
   let adminClient: Client;
   let appPool: Pool;

@@ -37,7 +37,22 @@ export function getDbPool(): Pool {
   return pool;
 }
 
-export const db = drizzle(getDbPool(), { schema });
+export const getAppPool = getDbPool;
+
+let _drizzleInstance: ReturnType<typeof drizzle<typeof schema>> | null = null;
+
+export function getDb() {
+  if (!_drizzleInstance) {
+    _drizzleInstance = drizzle(getDbPool(), { schema });
+  }
+  return _drizzleInstance;
+}
+
+export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getDb(), prop, receiver);
+  },
+});
 
 /**
  * Migration client - connects with DATABASE_URL_MIGRATIONS
@@ -59,72 +74,72 @@ export function getMigrationPool(): Pool {
  * 2. Does NOT own any public tables (schemaname='public', tableowner=current_user returns 0).
  * 3. Behavioral check: With no context set, SELECT count(*) from tenant tables returns 0 rows.
  */
-export async function verifyAppDatabaseSecurity(pool: Pool = getDbPool()): Promise<{
+export async function verifyAppDatabaseSecurity(pool?: Pool): Promise<{
   currentUser: string;
   isSuperuser: boolean;
   hasBypassRls: boolean;
   ownedTableCount: number;
   behavioralZeroCheck: boolean;
 }> {
-  const client = await pool.connect();
+  const clientPool = pool || getDbPool();
+  const client = await clientPool.connect();
+
   try {
-    // 1. Current user and role attributes
-    const roleRes = await client.query<{
-      current_user: string;
-      rolsuper: boolean;
-      rolbypassrls: boolean;
-    }>(
-      `SELECT current_user, r.rolsuper, r.rolbypassrls 
-       FROM pg_roles r 
-       WHERE r.rolname = current_user;`
-    );
+    // 1. Check current role attributes
+    const roleRes = await client.query(`
+      SELECT 
+        current_user AS role_name,
+        rolsuper,
+        rolbypassrls
+      FROM pg_roles 
+      WHERE rolname = current_user;
+    `);
 
-    if (roleRes.rows.length === 0) {
-      throw new Error("FATAL: Could not verify database role attributes for current_user.");
+    const roleInfo = roleRes.rows[0];
+    if (!roleInfo) {
+      throw new Error("Unable to inspect current database role attributes.");
     }
 
-    const { current_user: currentUser, rolsuper: isSuperuser, rolbypassrls: hasBypassRls } = roleRes.rows[0];
-
-    if (isSuperuser) {
+    if (roleInfo.rolsuper) {
       throw new Error(
-        `FATAL SECURITY VIOLATION: Database connection is running as SUPERUSER (${currentUser}). The application role must be a restricted user with NOSUPERUSER.`
+        `FATAL SECURITY VIOLATION: Database connection is running as superuser (${roleInfo.role_name}). App connection must be non-superuser.`
       );
     }
 
-    if (hasBypassRls) {
+    if (roleInfo.rolbypassrls) {
       throw new Error(
-        `FATAL SECURITY VIOLATION: Database connection user (${currentUser}) has BYPASSRLS privilege. Tenant isolation cannot be guaranteed.`
+        `FATAL SECURITY VIOLATION: Database role ${roleInfo.role_name} has BYPASSRLS enabled. RLS multi-tenant boundary is compromised.`
       );
     }
 
-    // 2. Table ownership check
-    const tablesRes = await client.query<{ tablename: string }>(
-      `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tableowner = current_user;`
-    );
+    // 2. Check table ownership in public schema
+    const ownerRes = await client.query(`
+      SELECT count(*)::int AS count 
+      FROM pg_tables 
+      WHERE schemaname = 'public' AND tableowner = current_user;
+    `);
 
-    if (tablesRes.rows.length > 0) {
-      const owned = tablesRes.rows.map((r) => r.tablename).join(", ");
+    const ownedTableCount = ownerRes.rows[0]?.count || 0;
+    if (ownedTableCount > 0) {
       throw new Error(
-        `FATAL SECURITY VIOLATION: Application role (${currentUser}) owns tables in public schema (${owned}). Table owner bypasses RLS in Postgres. Tables must be owned by the migration role.`
+        `FATAL SECURITY VIOLATION: Database role ${roleInfo.role_name} owns ${ownedTableCount} public tables. Table owners bypass RLS.`
       );
     }
 
-    // 3. Behavioral check: With no context set, querying tenant tables must yield 0 rows
-    const countRes = await client.query<{ count: string }>(
-      `SELECT count(*)::text as count FROM appointments;`
-    );
-    const count = parseInt(countRes.rows[0]?.count || "0", 10);
-    if (count !== 0) {
+    // 3. Behavioral zero-check: without app.clinic_id set, tenant table query must return 0 rows
+    const behavioralRes = await client.query(`SELECT count(*)::int AS c FROM appointments;`);
+    const appointmentCount = behavioralRes.rows[0]?.c || 0;
+    if (appointmentCount !== 0) {
       throw new Error(
-        `FATAL SECURITY VIOLATION: Behavioral check failed. With no app.clinic_id context set, SELECT count(*) FROM appointments returned ${count} rows (expected 0). RLS is not properly enforcing isolation.`
+        `FATAL SECURITY VIOLATION: Behavioral zero check failed. Unauthenticated SELECT returned ${appointmentCount} rows.`
       );
     }
 
     return {
-      currentUser,
-      isSuperuser: false,
-      hasBypassRls: false,
-      ownedTableCount: 0,
+      currentUser: roleInfo.role_name,
+      isSuperuser: roleInfo.rolsuper,
+      hasBypassRls: roleInfo.rolbypassrls,
+      ownedTableCount,
       behavioralZeroCheck: true,
     };
   } finally {

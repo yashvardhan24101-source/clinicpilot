@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "test:unit": "vitest run src/tests/unit",
+    "test:integration": "vitest run src/tests/integration --reporter=verbose",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lhci": "lhci autorun --config=lighthouserc.json",

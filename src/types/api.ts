@@ -95,6 +95,8 @@ export interface Patient {
   clinic_id?: string;
   name: string;
   phone: string;
+  gender?: string;
+  age?: number;
   language: "en" | "hi" | "hinglish";
   consent_status: {
     whatsapp_reminders: boolean;

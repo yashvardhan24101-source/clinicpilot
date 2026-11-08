@@ -63,11 +63,26 @@ jobs:
       - name: TypeScript Typecheck
         run: npx tsc --noEmit
 
+      - name: Verify Required Database Environment Variables
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$DATABASE_URL_MIGRATIONS" ]; then
+            echo "::error::DATABASE_URL and DATABASE_URL_MIGRATIONS must be set in CI"
+            exit 1
+          fi
+
       - name: Run Database Migrations on CI Postgres
         run: npm run db:migrate
 
       - name: Run Vitest Unit & Security Tests
-        run: npm test
+        run: npm run test:unit
+
+      - name: Run Database Integration & RLS Isolation Tests
+        run: |
+          npm run test:integration 2>&1 | tee integration-test.log
+          if grep -q -E "[1-9][0-9]* skipped" integration-test.log; then
+            echo "::error::Integration tests were skipped in CI!"
+            exit 1
+          fi
 
       - name: Build Next.js Production App
         run: npm run build
