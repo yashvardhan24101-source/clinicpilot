@@ -234,12 +234,19 @@ describe("M1: Real PostgreSQL Schema, Constraints & Least Privilege", () => {
   });
 
   it("6. Least Privilege Grants: clinicpilot_app has INSERT/SELECT only on audit_log and consents", async () => {
+    const clinicRes = await adminClient.query(
+      `INSERT INTO clinics (name, slug, short_code, city) VALUES ('Audit Clinic', 'audit-clinic', 'AC01', 'Delhi') RETURNING id;`
+    );
+    const testClinicId = clinicRes.rows[0].id;
+
     const appClient = await appPool.connect();
     try {
-      // app role can insert into audit_log
+      // app role can insert into audit_log within clinic context (so RETURNING id passes tenant select policy)
+      await appClient.query("SELECT set_config('app.clinic_id', $1, true);", [testClinicId]);
       const insertRes = await appClient.query(
-        `INSERT INTO audit_log (actor_id, actor_role, action, resource, details)
-         VALUES ('usr-test', 'doctor', 'TEST_ACTION', 'appointment', 'details') RETURNING id;`
+        `INSERT INTO audit_log (clinic_id, actor_id, actor_role, action, resource, details)
+         VALUES ($1, 'usr-test', 'doctor', 'TEST_ACTION', 'appointment', 'details') RETURNING id;`,
+        [testClinicId]
       );
       const auditId = insertRes.rows[0].id;
       expect(auditId).toBeDefined();

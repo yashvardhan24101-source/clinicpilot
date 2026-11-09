@@ -81,6 +81,34 @@ CREATE POLICY audit_log_insert_policy ON audit_log FOR INSERT
     OR current_setting('app.is_super_admin', true) = 'true'
   );
 
+-- Patient SELECT policies on clinics, doctors, and services (for linked patient accounts)
+DROP POLICY IF EXISTS clinics_patient_select ON clinics;
+CREATE POLICY clinics_patient_select ON clinics FOR SELECT
+  USING (
+    id IN (
+      SELECT clinic_id FROM patient_account_links
+      WHERE account_id = NULLIF(current_setting('app.patient_account_id', true), '')::uuid
+    )
+  );
+
+DROP POLICY IF EXISTS doctors_patient_select ON doctors;
+CREATE POLICY doctors_patient_select ON doctors FOR SELECT
+  USING (
+    clinic_id IN (
+      SELECT clinic_id FROM patient_account_links
+      WHERE account_id = NULLIF(current_setting('app.patient_account_id', true), '')::uuid
+    )
+  );
+
+DROP POLICY IF EXISTS services_patient_select ON services;
+CREATE POLICY services_patient_select ON services FOR SELECT
+  USING (
+    clinic_id IN (
+      SELECT clinic_id FROM patient_account_links
+      WHERE account_id = NULLIF(current_setting('app.patient_account_id', true), '')::uuid
+    )
+  );
+
 -- ============================================================================
 -- 3. Least-Privilege Grants & Revocations
 -- ============================================================================
@@ -110,7 +138,7 @@ AS $$
 BEGIN
   IF NEW.role IS DISTINCT FROM OLD.role THEN
     IF NULLIF(current_setting('app.staff_role', true), '') IS DISTINCT FROM 'owner'
-       AND current_setting('app.is_super_admin', true) <> 'true' THEN
+       AND COALESCE(current_setting('app.is_super_admin', true), '') <> 'true' THEN
       RAISE EXCEPTION 'FORBIDDEN: Only clinic owners can modify staff roles'
         USING ERRCODE = '42501';
     END IF;
@@ -416,7 +444,7 @@ DECLARE
   v_short_code text;
 BEGIN
   -- Context verification: Must be super-admin
-  IF current_setting('app.is_super_admin', true) <> 'true' THEN
+  IF COALESCE(current_setting('app.is_super_admin', true), '') <> 'true' THEN
     RAISE EXCEPTION 'UNAUTHORIZED: Super-admin context required to approve clinic requests'
       USING ERRCODE = '42501';
   END IF;
@@ -488,6 +516,36 @@ $$;
 
 REVOKE ALL ON FUNCTION super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz, text) TO clinicpilot_app;
+
+-- Super-admin platform metrics: returns aggregated counts ONLY (no direct access to clinical tables)
+-- Hardened with null-safe super-admin context verification
+CREATE OR REPLACE FUNCTION super_admin_get_platform_metrics()
+RETURNS TABLE (
+  total_clinics bigint,
+  total_active_doctors bigint,
+  total_appointments bigint,
+  total_patients bigint
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF COALESCE(current_setting('app.is_super_admin', true), '') <> 'true' THEN
+    RAISE EXCEPTION 'UNAUTHORIZED: Super-admin context required' USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    (SELECT count(*) FROM clinics WHERE slug <> 'system-platform') AS total_clinics,
+    (SELECT count(*) FROM doctors WHERE active = true) AS total_active_doctors,
+    (SELECT count(*) FROM appointments) AS total_appointments,
+    (SELECT count(*) FROM patients) AS total_patients;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION super_admin_get_platform_metrics() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION super_admin_get_platform_metrics() TO clinicpilot_app;
 
 -- ============================================================================
 -- 6. M7 Patient Write Functions Signatures (SECURITY DEFINER with Slot & Rule Re-checks)
