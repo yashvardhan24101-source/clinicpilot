@@ -732,7 +732,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     }
     expect(recRoleChangeErr).toBeDefined();
     expect(recRoleChangeErr.code).toBe("42501");
-    expect(recRoleChangeErr.message).toContain("Only clinic owners can modify staff roles");
+    expect(recRoleChangeErr.message).toContain("Only clinic owners can modify staff role");
 
     // 3. Owner context: CAN insert into staff_invites
     const inviteId = await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
@@ -1220,51 +1220,52 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     );
     const activeSessJti = activeSessRes.rows[0].jti;
 
-    const client = await appPool.connect();
+    // 4A: Attempting to un-revoke a revoked session (revoked_at = NULL) -> fails with 42501
+    let unrevokeErr: any = null;
     try {
-      // 4A: Attempting to un-revoke a revoked session (revoked_at = NULL) -> fails with 42501
-      let unrevokeErr: any = null;
-      try {
+      await withClinicContext(clinicAId, async (client) => {
         await client.query(`UPDATE sessions SET revoked_at = NULL WHERE jti = $1;`, [revokedSessJti]);
-      } catch (err: any) {
-        unrevokeErr = err;
-      }
-      expect(unrevokeErr).toBeDefined();
-      expect(unrevokeErr.code).toBe("42501");
-      expect(unrevokeErr.message).toContain("Session cannot be un-revoked once revoked");
-
-      // 4B: Attempting to extend expires_at on a session -> fails with 42501
-      let extendErr: any = null;
-      try {
-        await client.query(`UPDATE sessions SET expires_at = now() + interval '7 days' WHERE jti = $1;`, [activeSessJti]);
-      } catch (err: any) {
-        extendErr = err;
-      }
-      expect(extendErr).toBeDefined();
-      expect(extendErr.code).toBe("42501");
-      expect(extendErr.message).toContain("Session expiry cannot be extended");
-
-      // 4C: Patient sessions immutability check
-      const patSessRes = await adminClient.query(
-        `INSERT INTO patient_sessions (account_id, expires_at, revoked_at)
-         VALUES ($1, now() + interval '1 hour', now() - interval '2 minutes')
-         RETURNING jti;`,
-        [patientAccountAId]
-      );
-      const patRevokedSessJti = patSessRes.rows[0].jti;
-
-      let patUnrevokeErr: any = null;
-      try {
-        await client.query(`UPDATE patient_sessions SET revoked_at = NULL WHERE jti = $1;`, [patRevokedSessJti]);
-      } catch (err: any) {
-        patUnrevokeErr = err;
-      }
-      expect(patUnrevokeErr).toBeDefined();
-      expect(patUnrevokeErr.code).toBe("42501");
-      expect(patUnrevokeErr.message).toContain("Session cannot be un-revoked once revoked");
-    } finally {
-      client.release();
+      });
+    } catch (err: any) {
+      unrevokeErr = err;
     }
+    expect(unrevokeErr).toBeDefined();
+    expect(unrevokeErr.code).toBe("42501");
+    expect(unrevokeErr.message).toContain("Session cannot be un-revoked once revoked");
+
+    // 4B: Attempting to extend expires_at on a session -> fails with 42501
+    let extendErr: any = null;
+    try {
+      await withClinicContext(clinicAId, async (client) => {
+        await client.query(`UPDATE sessions SET expires_at = now() + interval '7 days' WHERE jti = $1;`, [activeSessJti]);
+      });
+    } catch (err: any) {
+      extendErr = err;
+    }
+    expect(extendErr).toBeDefined();
+    expect(extendErr.code).toBe("42501");
+    expect(extendErr.message).toContain("Session expiry cannot be extended");
+
+    // 4C: Patient sessions immutability check
+    const patSessRes = await adminClient.query(
+      `INSERT INTO patient_sessions (account_id, expires_at, revoked_at)
+       VALUES ($1, now() + interval '1 hour', now() - interval '2 minutes')
+       RETURNING jti;`,
+      [patientAccountAId]
+    );
+    const patRevokedSessJti = patSessRes.rows[0].jti;
+
+    let patUnrevokeErr: any = null;
+    try {
+      await withPatientContext(patientAccountAId, async (client) => {
+        await client.query(`UPDATE patient_sessions SET revoked_at = NULL WHERE jti = $1;`, [patRevokedSessJti]);
+      });
+    } catch (err: any) {
+      patUnrevokeErr = err;
+    }
+    expect(patUnrevokeErr).toBeDefined();
+    expect(patUnrevokeErr.code).toBe("42501");
+    expect(patUnrevokeErr.message).toContain("Session cannot be un-revoked once revoked");
   });
 
   it("31. Adversarial Attack 5: Staff attempts to reset link code attempts or extend expiry (fails with 42501)", async () => {
