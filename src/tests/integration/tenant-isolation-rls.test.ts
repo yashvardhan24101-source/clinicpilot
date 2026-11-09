@@ -916,7 +916,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
   it("26. Super-Admin Clinic Request Approval: atomic creation of clinic + owner invite + audit", async () => {
     // 1. Submit a clinic request
     const reqRes = await adminClient.query(
-      `INSERT INTO clinic_requests (clinic_name, doctor_name, email, phone, city)
+      `INSERT INTO clinic_requests (clinic_name, owner_name, owner_email, owner_phone, city)
        VALUES ('Metro Dental Care', 'Dr. Metro Owner', 'owner@metrodental.com', '+919876500000', 'Delhi')
        RETURNING id;`
     );

@@ -2,18 +2,26 @@
 -- Milestone 2: Tenant Isolation, RLS Hardening, Column-Level Grants, and Security Definer Updates
 
 -- ============================================================================
--- 1. Schema Enhancements: Link Codes Security & Account Lockout
+-- 1. Schema Enhancements: Columns, Constraints & Lockouts
 -- ============================================================================
-ALTER TABLE patient_link_codes
-  ADD COLUMN IF NOT EXISTS attempts_count integer NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS max_attempts integer NOT NULL DEFAULT 5,
-  ADD COLUMN IF NOT EXISTS account_lockout_until timestamptz;
+-- Patient Link Codes Enhancements
+ALTER TABLE patient_link_codes ADD COLUMN IF NOT EXISTS attempts_count integer NOT NULL DEFAULT 0;
+ALTER TABLE patient_link_codes ADD COLUMN IF NOT EXISTS max_attempts integer NOT NULL DEFAULT 5;
+ALTER TABLE patient_link_codes ADD COLUMN IF NOT EXISTS account_lockout_until timestamptz;
 
-ALTER TABLE patient_accounts
-  ADD COLUMN IF NOT EXISTS link_lockout_until timestamptz,
-  ADD COLUMN IF NOT EXISTS failed_link_attempts integer NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS email_verified_at timestamptz,
-  ADD COLUMN IF NOT EXISTS phone_verified_at timestamptz;
+-- Patient Accounts Enhancements
+ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS link_lockout_until timestamptz;
+ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS failed_link_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
+ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS phone_verified_at timestamptz;
+
+-- Clinics Enhancements
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'starter';
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+
+-- Staff Invites Enhancements (Allow super_admin / platform invites without pre-existing staff user)
+ALTER TABLE staff_invites ALTER COLUMN created_by DROP NOT NULL;
+ALTER TABLE staff_invites ADD COLUMN IF NOT EXISTS name text;
 
 -- ============================================================================
 -- 2. Policies for patient_link_codes
@@ -40,7 +48,7 @@ REVOKE ALL ON magic_link_tokens FROM clinicpilot_app;
 REVOKE SELECT ON staff_users FROM clinicpilot_app;
 GRANT SELECT (id, clinic_id, name, email, role, is_active, created_at) ON staff_users TO clinicpilot_app;
 
--- Column-Level UPDATE Grants on clinics: Exclude privileged columns (plan, is_active, slug, is_system, id, created_at)
+-- Column-Level UPDATE Grants on clinics: Exclude privileged columns (plan, is_active, slug, id, created_at)
 REVOKE UPDATE ON clinics FROM clinicpilot_app;
 GRANT UPDATE (name, city, timezone, updated_at) ON clinics TO clinicpilot_app;
 
@@ -112,7 +120,7 @@ CREATE TRIGGER trg_enforce_staff_role_change
 -- ============================================================================
 
 -- Function 1: Patient-context audit entry
--- Verifies that the account is linked to the clinic before recording an audit row
+DROP FUNCTION IF EXISTS audit_patient_linked_event(uuid, uuid, text, text, text, text);
 CREATE OR REPLACE FUNCTION audit_patient_linked_event(
   p_clinic_id uuid,
   p_account_id uuid,
@@ -173,6 +181,7 @@ REVOKE ALL ON FUNCTION audit_patient_linked_event(uuid, uuid, text, text, text, 
 GRANT EXECUTE ON FUNCTION audit_patient_linked_event(uuid, uuid, text, text, text, text) TO clinicpilot_app;
 
 -- Function 2: Link patient account with 8-character code, HMAC pepper, 10-min expiry, max 5 attempts & lockout
+DROP FUNCTION IF EXISTS auth_link_patient_account_with_code(uuid, uuid, uuid, text, text);
 CREATE OR REPLACE FUNCTION auth_link_patient_account_with_code(
   p_account_id uuid,
   p_clinic_id uuid,
@@ -294,6 +303,8 @@ GRANT EXECUTE ON FUNCTION auth_link_patient_account_with_code(uuid, uuid, uuid, 
 --    patient_accounts row is ALWAYS created to prevent account takeover.
 -- 5. Phone Unverified Storage: p_phone is stored with phone_verified_at = NULL.
 -- ============================================================================
+DROP FUNCTION IF EXISTS auth_register_patient_first_signup(text, text, text, text, text);
+DROP FUNCTION IF EXISTS auth_register_patient_first_signup(text, text, text, text, text, boolean);
 CREATE OR REPLACE FUNCTION auth_register_patient_first_signup(
   p_provider text,
   p_provider_subject text,
@@ -369,13 +380,16 @@ REVOKE ALL ON FUNCTION auth_register_patient_first_signup(text, text, text, text
 GRANT EXECUTE ON FUNCTION auth_register_patient_first_signup(text, text, text, text, text, boolean) TO clinicpilot_app;
 
 -- Function 4: Super-Admin Approval of Clinic Request (Atomic Clinic + Owner Invite + Audit)
+DROP FUNCTION IF EXISTS super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz);
+DROP FUNCTION IF EXISTS super_admin_approve_clinic_request(uuid, text, text, text, text, text, timestamptz);
 CREATE OR REPLACE FUNCTION super_admin_approve_clinic_request(
   p_request_id uuid,
   p_slug text,
   p_invite_email text,
   p_invite_name text,
   p_token_hash text,
-  p_expires_at timestamptz
+  p_expires_at timestamptz,
+  p_short_code text DEFAULT NULL
 )
 RETURNS TABLE (
   clinic_id uuid,
@@ -389,6 +403,7 @@ DECLARE
   v_req clinic_requests%ROWTYPE;
   v_clinic_id uuid;
   v_invite_id uuid;
+  v_short_code text;
 BEGIN
   -- Context verification: Must be super-admin
   IF current_setting('app.is_super_admin', true) <> 'true' THEN
@@ -406,17 +421,22 @@ BEGIN
     RAISE EXCEPTION 'Clinic request % is already %', p_request_id, v_req.status USING ERRCODE = '22000';
   END IF;
 
+  v_short_code := coalesce(
+    NULLIF(p_short_code, ''),
+    upper(substring(replace(v_req.clinic_name, ' ', ''), 1, 4)) || substring(gen_random_uuid()::text, 1, 4)
+  );
+
   -- 1. Create clinic
-  INSERT INTO clinics (name, slug, city, timezone, plan, is_active)
-  VALUES (v_req.clinic_name, p_slug, v_req.city, 'Asia/Kolkata', 'starter', true)
+  INSERT INTO clinics (name, slug, short_code, city, timezone, plan, is_active)
+  VALUES (v_req.clinic_name, p_slug, v_short_code, v_req.city, 'Asia/Kolkata', 'starter', true)
   RETURNING id INTO v_clinic_id;
 
   -- 2. Create owner invite
   INSERT INTO staff_invites (clinic_id, email, name, role, token_hash, expires_at)
   VALUES (
     v_clinic_id,
-    lower(trim(coalesce(p_invite_email, v_req.doctor_name))),
-    coalesce(p_invite_name, v_req.doctor_name),
+    lower(trim(coalesce(p_invite_email, v_req.owner_email))),
+    coalesce(p_invite_name, v_req.owner_name),
     'owner',
     p_token_hash,
     p_expires_at
@@ -456,13 +476,14 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz) TO clinicpilot_app;
+REVOKE ALL ON FUNCTION super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz, text) TO clinicpilot_app;
 
 -- ============================================================================
 -- 6. M7 Patient Write Functions Signatures (SECURITY DEFINER with Slot & Rule Re-checks)
 -- ============================================================================
 -- Signature 1: Book appointment
+DROP FUNCTION IF EXISTS patient_book_appointment(uuid, uuid, uuid, uuid, uuid, timestamptz, timestamptz);
 CREATE OR REPLACE FUNCTION patient_book_appointment(
   p_account_id uuid,
   p_clinic_id uuid,
@@ -496,6 +517,7 @@ END;
 $$;
 
 -- Signature 2: Cancel appointment
+DROP FUNCTION IF EXISTS patient_cancel_appointment(uuid, uuid, uuid, text);
 CREATE OR REPLACE FUNCTION patient_cancel_appointment(
   p_account_id uuid,
   p_clinic_id uuid,
@@ -518,6 +540,7 @@ END;
 $$;
 
 -- Signature 3: Reschedule appointment
+DROP FUNCTION IF EXISTS patient_reschedule_appointment(uuid, uuid, uuid, timestamptz, timestamptz);
 CREATE OR REPLACE FUNCTION patient_reschedule_appointment(
   p_account_id uuid,
   p_clinic_id uuid,
