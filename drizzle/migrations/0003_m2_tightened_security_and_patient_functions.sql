@@ -798,10 +798,10 @@ BEGIN
   FOR UPDATE;
 
   IF FOUND THEN
-    UPDATE password_reset_tokens SET used_at = now() WHERE id = v_rec.id;
+    UPDATE password_reset_tokens SET used_at = now() WHERE password_reset_tokens.id = v_rec.id;
     -- Revoke all active sessions of this user in the same transaction (Requirement 7)
-    UPDATE sessions SET revoked_at = now() WHERE user_id = v_rec.user_id AND revoked_at IS NULL;
-    SELECT clinic_id INTO v_clinic_id FROM staff_users WHERE id = v_rec.user_id;
+    UPDATE sessions SET revoked_at = now() WHERE sessions.user_id = v_rec.user_id AND sessions.revoked_at IS NULL;
+    SELECT staff_users.clinic_id INTO v_clinic_id FROM staff_users WHERE staff_users.id = v_rec.user_id;
     RETURN QUERY SELECT v_rec.user_id, v_clinic_id, true;
   ELSE
     RETURN QUERY SELECT NULL::uuid, NULL::uuid, false;

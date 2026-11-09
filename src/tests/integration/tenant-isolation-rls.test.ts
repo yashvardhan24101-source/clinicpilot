@@ -1463,11 +1463,10 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     const systemClinicId = sysClinicRes.rows[0].id;
 
     // 2. Insert a staff user inside the system clinic
-    const sysStaffEmail = "system.admin.breach@platform.internal";
+    const sysStaffEmail = `sys.infiltrator.${Date.now()}@platform.internal`;
     await adminClient.query(
       `INSERT INTO staff_users (clinic_id, name, email, role, password_hash)
-       VALUES ($1, 'System Infiltrator', $2, 'owner', crypt('SecretPass123!', gen_salt('bf')))
-       ON CONFLICT (email) DO NOTHING;`,
+       VALUES ($1, 'System Infiltrator', $2, 'owner', crypt('SecretPass123!', gen_salt('bf')));`,
       [systemClinicId, sysStaffEmail]
     );
 
