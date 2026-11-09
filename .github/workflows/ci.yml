@@ -87,7 +87,11 @@ jobs:
             echo "::error::Skipped tests detected in integration test suite! Zero skipped tests required."
             exit 1
           fi
-          echo "Integration Test Suite Result: Zero skipped tests confirmed."
+          if ! grep -qE "Tests\s+[1-9][0-9]* passed" integration.log; then
+            echo "::error::Zero tests run or passed in integration test suite!"
+            exit 1
+          fi
+          echo "Integration Test Suite Result: Zero skipped tests confirmed and non-zero tests executed."
 
       - name: Build Next.js Production App
         run: npm run build

@@ -241,8 +241,9 @@ describe("M1: Real PostgreSQL Schema, Constraints & Least Privilege", () => {
 
     const appClient = await appPool.connect();
     try {
-      // app role can insert into audit_log within clinic context (so RETURNING id passes tenant select policy)
+      // app role can insert into audit_log within clinic owner context (so RETURNING id passes owner-only select policy)
       await appClient.query("SELECT set_config('app.clinic_id', $1, false);", [testClinicId]);
+      await appClient.query("SELECT set_config('app.staff_role', 'owner', false);");
       const insertRes = await appClient.query(
         `INSERT INTO audit_log (clinic_id, actor_id, actor_role, action, resource, details)
          VALUES ($1, 'usr-test', 'doctor', 'TEST_ACTION', 'appointment', 'details') RETURNING id;`,

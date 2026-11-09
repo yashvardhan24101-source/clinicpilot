@@ -350,15 +350,35 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     expect(mutualExError.message).toContain("MUTUALLY_EXCLUSIVE_CONTEXT");
   });
 
-  it("12. audit_log RLS: NULL clinic_id rows are visible to super_admin and hidden from clinic tenants", async () => {
-    // Clinic A query: cannot see super-admin audit log (clinic_id IS NULL)
-    const clinicLogs = await withClinicContext(clinicAId, async (client) => {
+  it("12. audit_log RLS: NULL clinic_id rows are visible to super_admin and hidden from clinic tenants; clinic SELECT limited to owner", async () => {
+    // 1. Owner can insert and view their clinic audit log
+    const clinicLogId = await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+      const res = await client.query(
+        `INSERT INTO audit_log (clinic_id, actor_id, actor_role, action, resource, details)
+         VALUES ($1, 'owner-1', 'owner', 'clinic_event', 'clinic', '{"reason": "audit"}')
+         RETURNING id;`,
+        [clinicAId]
+      );
+      const auditRes = await client.query("SELECT * FROM audit_log WHERE clinic_id = $1;", [clinicAId]);
+      expect(auditRes.rows.length).toBeGreaterThanOrEqual(1);
+      return res.rows[0].id;
+    });
+    expect(clinicLogId).toBeDefined();
+
+    // 2. Receptionist cannot view clinic audit log (returns 0 rows under RLS)
+    await withClinicContext(clinicAId, { staffRole: "receptionist" }, async (client) => {
+      const res = await client.query("SELECT * FROM audit_log WHERE clinic_id = $1;", [clinicAId]);
+      expect(res.rows.length).toBe(0);
+    });
+
+    // 3. Clinic A query: cannot see super-admin audit log (clinic_id IS NULL)
+    const clinicLogs = await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
       const res = await client.query("SELECT * FROM audit_log WHERE clinic_id IS NULL;");
       return res.rows;
     });
     expect(clinicLogs.length).toBe(0);
 
-    // Super-admin query: can see audit logs with clinic_id IS NULL
+    // 4. Super-admin query: can see audit logs with clinic_id IS NULL
     const superAdminSession = {
       userId: "usr-super-admin-0",
       role: "super_admin",
@@ -1015,5 +1035,467 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     );
     expect(reqCheck.rows[0].status).toBe("approved");
     expect(reqCheck.rows[0].reviewed_at).not.toBeNull();
+  });
+
+  // ============================================================================
+  // ADVERSARIAL INTEGRATION ATTACK TESTS (Requirement 10)
+  // ============================================================================
+
+  it("27. Adversarial Attack 1: Receptionist attempts to insert an owner user (fails with 42501)", async () => {
+    // Attack 1A: Direct INSERT on staff_users (revoked from clinicpilot_app)
+    let directInsertErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "receptionist" }, async (client) => {
+        await client.query(
+          `INSERT INTO staff_users (clinic_id, name, email, role)
+           VALUES ($1, 'Rogue Owner', 'rogue.owner@clinic-alpha.com', 'owner');`,
+          [clinicAId]
+        );
+      });
+    } catch (err: any) {
+      directInsertErr = err;
+    }
+    expect(directInsertErr).toBeDefined();
+    expect(directInsertErr.code).toBe("42501");
+
+    // Attack 1B: Attempting to insert an invite for role='owner' as receptionist (RLS policy requires app.staff_role = 'owner')
+    let inviteInsertErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "receptionist" }, async (client) => {
+        await client.query(
+          `INSERT INTO staff_invites (clinic_id, email, name, role, token_hash, expires_at)
+           VALUES ($1, 'rogue.invite@clinic-alpha.com', 'Rogue Owner Invite', 'owner', 'fakehash', now() + interval '1 day');`,
+          [clinicAId]
+        );
+      });
+    } catch (err: any) {
+      inviteInsertErr = err;
+    }
+    expect(inviteInsertErr).toBeDefined();
+    expect(inviteInsertErr.code).toBe("42501");
+  });
+
+  it("28. Adversarial Attack 2: Receptionist cannot change owner's email or deactivate owner; last owner protected from deactivation/demotion (fails with 42501)", async () => {
+    // Set up a dedicated clinic with 1 owner and 1 receptionist
+    const clinicRes = await adminClient.query(
+      `INSERT INTO clinics (name, slug, short_code, city) VALUES ('Attack Defense Clinic', 'defense-clinic', 'DFC1', 'Delhi') RETURNING id;`
+    );
+    const defClinicId = clinicRes.rows[0].id;
+
+    const ownerRes = await adminClient.query(
+      `INSERT INTO staff_users (clinic_id, name, email, role, password_hash, is_active)
+       VALUES ($1, 'Sole Owner', 'owner@defense-clinic.in', 'owner', 'hash', true) RETURNING id;`,
+      [defClinicId]
+    );
+    const soleOwnerId = ownerRes.rows[0].id;
+
+    const recRes = await adminClient.query(
+      `INSERT INTO staff_users (clinic_id, name, email, role, password_hash, is_active)
+       VALUES ($1, 'Rogue Receptionist', 'rec@defense-clinic.in', 'receptionist', 'hash', true) RETURNING id;`,
+      [defClinicId]
+    );
+    const recId = recRes.rows[0].id;
+
+    // 2A: Receptionist attempts to change owner's email -> fails with 42501
+    let emailChangeErr: any = null;
+    try {
+      await withClinicContext(defClinicId, { staffRole: "receptionist", userId: recId }, async (client) => {
+        await client.query(`UPDATE staff_users SET email = 'hacked@defense-clinic.in' WHERE id = $1;`, [soleOwnerId]);
+      });
+    } catch (err: any) {
+      emailChangeErr = err;
+    }
+    expect(emailChangeErr).toBeDefined();
+    expect(emailChangeErr.code).toBe("42501");
+
+    // 2B: Receptionist attempts to deactivate owner -> fails with 42501
+    let deactErr: any = null;
+    try {
+      await withClinicContext(defClinicId, { staffRole: "receptionist", userId: recId }, async (client) => {
+        await client.query(`UPDATE staff_users SET is_active = false WHERE id = $1;`, [soleOwnerId]);
+      });
+    } catch (err: any) {
+      deactErr = err;
+    }
+    expect(deactErr).toBeDefined();
+    expect(deactErr.code).toBe("42501");
+
+    // 2C: Even in OWNER context, deactivating the last active owner fails with 42501
+    let lastOwnerDeactErr: any = null;
+    try {
+      await withClinicContext(defClinicId, { staffRole: "owner", userId: soleOwnerId }, async (client) => {
+        await client.query(`UPDATE staff_users SET is_active = false WHERE id = $1;`, [soleOwnerId]);
+      });
+    } catch (err: any) {
+      lastOwnerDeactErr = err;
+    }
+    expect(lastOwnerDeactErr).toBeDefined();
+    expect(lastOwnerDeactErr.code).toBe("42501");
+    expect(lastOwnerDeactErr.message).toContain("Cannot deactivate or demote the last active clinic owner");
+
+    // 2D: Even in OWNER context, demoting the last active owner to receptionist fails with 42501
+    let lastOwnerDemoteErr: any = null;
+    try {
+      await withClinicContext(defClinicId, { staffRole: "owner", userId: soleOwnerId }, async (client) => {
+        await client.query(`UPDATE staff_users SET role = 'receptionist' WHERE id = $1;`, [soleOwnerId]);
+      });
+    } catch (err: any) {
+      lastOwnerDemoteErr = err;
+    }
+    expect(lastOwnerDemoteErr).toBeDefined();
+    expect(lastOwnerDemoteErr.code).toBe("42501");
+    expect(lastOwnerDemoteErr.message).toContain("Cannot deactivate or demote the last active clinic owner");
+  });
+
+  it("29. Adversarial Attack 3: Patient attempts to set phone_verified_at or clear lockout (fails with 42501); profile update succeeds", async () => {
+    // Create patient account with lockout and unverified phone
+    const patAccRes = await adminClient.query(
+      `INSERT INTO patient_accounts (name, email, phone, failed_link_attempts, link_lockout_until)
+       VALUES ('Locked Patient', 'locked.patient@example.com', '+919876543299', 5, now() + interval '30 minutes')
+       RETURNING id;`
+    );
+    const lockedAccId = patAccRes.rows[0].id;
+
+    // 3A: Patient attempts to update phone_verified_at directly -> fails with 42501
+    let phoneVerifyErr: any = null;
+    try {
+      await withPatientContext(lockedAccId, async (client) => {
+        await client.query(`UPDATE patient_accounts SET phone_verified_at = now() WHERE id = $1;`, [lockedAccId]);
+      });
+    } catch (err: any) {
+      phoneVerifyErr = err;
+    }
+    expect(phoneVerifyErr).toBeDefined();
+    expect(phoneVerifyErr.code).toBe("42501");
+
+    // 3B: Patient attempts to clear lockout directly -> fails with 42501
+    let clearLockoutErr: any = null;
+    try {
+      await withPatientContext(lockedAccId, async (client) => {
+        await client.query(
+          `UPDATE patient_accounts SET link_lockout_until = NULL, failed_link_attempts = 0 WHERE id = $1;`,
+          [lockedAccId]
+        );
+      });
+    } catch (err: any) {
+      clearLockoutErr = err;
+    }
+    expect(clearLockoutErr).toBeDefined();
+    expect(clearLockoutErr.code).toBe("42501");
+
+    // 3C: Updating permitted profile columns (name, language) succeeds
+    await withPatientContext(lockedAccId, async (client) => {
+      const updRes = await client.query(
+        `UPDATE patient_accounts SET name = 'Self-Updated Name', language = 'hi' WHERE id = $1 RETURNING name, language;`,
+        [lockedAccId]
+      );
+      expect(updRes.rows[0].name).toBe("Self-Updated Name");
+      expect(updRes.rows[0].language).toBe("hi");
+    });
+  });
+
+  it("30. Adversarial Attack 4: Any context attempts to un-revoke a session or extend expiry (fails with 42501)", async () => {
+    // Create a staff user to own the session
+    const staffRes = await adminClient.query(
+      `INSERT INTO staff_users (clinic_id, name, email, role, password_hash)
+       VALUES ($1, 'Session User', 'session.user@clinic-alpha.com', 'receptionist', 'hash') RETURNING id;`,
+      [clinicAId]
+    );
+    const staffId = staffRes.rows[0].id;
+
+    // Create an active session and a revoked session
+    const sessRes = await adminClient.query(
+      `INSERT INTO sessions (user_id, token_hash, expires_at, revoked_at)
+       VALUES ($1, 'revoked_token_hash_1', now() + interval '1 hour', now() - interval '5 minutes')
+       RETURNING id, expires_at;`,
+      [staffId]
+    );
+    const revokedSessId = sessRes.rows[0].id;
+
+    const activeSessRes = await adminClient.query(
+      `INSERT INTO sessions (user_id, token_hash, expires_at)
+       VALUES ($1, 'active_token_hash_2', now() + interval '1 hour')
+       RETURNING id, expires_at;`,
+      [staffId]
+    );
+    const activeSessId = activeSessRes.rows[0].id;
+
+    const client = await appPool.connect();
+    try {
+      // 4A: Attempting to un-revoke a revoked session (revoked_at = NULL) -> fails with 42501
+      let unrevokeErr: any = null;
+      try {
+        await client.query(`UPDATE sessions SET revoked_at = NULL WHERE id = $1;`, [revokedSessId]);
+      } catch (err: any) {
+        unrevokeErr = err;
+      }
+      expect(unrevokeErr).toBeDefined();
+      expect(unrevokeErr.code).toBe("42501");
+      expect(unrevokeErr.message).toContain("Session cannot be un-revoked once revoked");
+
+      // 4B: Attempting to extend expires_at on a session -> fails with 42501
+      let extendErr: any = null;
+      try {
+        await client.query(`UPDATE sessions SET expires_at = now() + interval '7 days' WHERE id = $1;`, [activeSessId]);
+      } catch (err: any) {
+        extendErr = err;
+      }
+      expect(extendErr).toBeDefined();
+      expect(extendErr.code).toBe("42501");
+      expect(extendErr.message).toContain("Session expiry cannot be extended");
+
+      // 4C: Patient sessions immutability check
+      const patSessRes = await adminClient.query(
+        `INSERT INTO patient_sessions (patient_account_id, token_hash, expires_at, revoked_at)
+         VALUES ($1, 'pat_revoked_hash', now() + interval '1 hour', now() - interval '2 minutes')
+         RETURNING id;`,
+        [patientAccountAId]
+      );
+      const patRevokedSessId = patSessRes.rows[0].id;
+
+      let patUnrevokeErr: any = null;
+      try {
+        await client.query(`UPDATE patient_sessions SET revoked_at = NULL WHERE id = $1;`, [patRevokedSessId]);
+      } catch (err: any) {
+        patUnrevokeErr = err;
+      }
+      expect(patUnrevokeErr).toBeDefined();
+      expect(patUnrevokeErr.code).toBe("42501");
+      expect(patUnrevokeErr.message).toContain("Session cannot be un-revoked once revoked");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("31. Adversarial Attack 5: Staff attempts to reset link code attempts or extend expiry (fails with 42501)", async () => {
+    // Insert a link code with attempts_count = 3
+    const codeRes = await adminClient.query(
+      `INSERT INTO patient_link_codes (clinic_id, patient_id, code_hash, attempts_count, expires_at)
+       VALUES ($1, $2, 'code_defense_hash', 3, now() + interval '5 minutes')
+       RETURNING id;`,
+      [clinicAId, patientAId]
+    );
+    const codeId = codeRes.rows[0].id;
+
+    // Direct UPDATE on patient_link_codes is completely revoked from clinicpilot_app
+    let resetAttemptsErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+        await client.query(`UPDATE patient_link_codes SET attempts_count = 0 WHERE id = $1;`, [codeId]);
+      });
+    } catch (err: any) {
+      resetAttemptsErr = err;
+    }
+    expect(resetAttemptsErr).toBeDefined();
+    expect(resetAttemptsErr.code).toBe("42501");
+
+    let extendExpiryErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+        await client.query(`UPDATE patient_link_codes SET expires_at = now() + interval '2 days' WHERE id = $1;`, [codeId]);
+      });
+    } catch (err: any) {
+      extendExpiryErr = err;
+    }
+    expect(extendExpiryErr).toBeDefined();
+    expect(extendExpiryErr.code).toBe("42501");
+  });
+
+  it("32. Adversarial Attack 6: Clinic A attempts to insert a row with Clinic B's clinic_id (fails with 42501)", async () => {
+    // Attack 6A: Clinic A attempts to insert a patient into Clinic B
+    let crossPatientErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+        await client.query(
+          `INSERT INTO patients (clinic_id, name, phone)
+           VALUES ($1, 'Spoofed Patient', '+919999888877');`,
+          [clinicBId]
+        );
+      });
+    } catch (err: any) {
+      crossPatientErr = err;
+    }
+    expect(crossPatientErr).toBeDefined();
+    expect(crossPatientErr.code).toBe("42501");
+
+    // Attack 6B: Clinic A attempts to insert an audit_log entry claiming Clinic B
+    let crossAuditErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+        await client.query(
+          `INSERT INTO audit_log (clinic_id, actor_id, actor_role, action, resource, details)
+           VALUES ($1, 'intruder', 'owner', 'spoof_action', 'patient', '{}');`,
+          [clinicBId]
+        );
+      });
+    } catch (err: any) {
+      crossAuditErr = err;
+    }
+    expect(crossAuditErr).toBeDefined();
+    expect(crossAuditErr.code).toBe("42501");
+  });
+
+  it("33. Adversarial Attack 7: Setting both app.clinic_id and app.patient_account_id in one transaction fails with 22000", async () => {
+    const client = await appPool.connect();
+    try {
+      await client.query("BEGIN;");
+      let conflictErr: any = null;
+      try {
+        await client.query("SELECT set_config('app.clinic_id', $1, true);", [clinicAId]);
+        await client.query("SELECT set_config('app.patient_account_id', $1, true);", [patientAccountAId]);
+        await client.query("SELECT assert_mutually_exclusive_context();");
+      } catch (err: any) {
+        conflictErr = err;
+      } finally {
+        await client.query("ROLLBACK;");
+      }
+      expect(conflictErr).toBeDefined();
+      expect(conflictErr.code).toBe("22000");
+      expect(conflictErr.message).toContain("MUTUALLY_EXCLUSIVE_CONTEXT");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("34. Adversarial Attack 8: Pooled connection reuse carries zero leftover context (zero rows returned, context settings cleared)", async () => {
+    // Step 1: Run an operation under Clinic A context
+    await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+      const res = await client.query("SELECT * FROM appointments;");
+      expect(res.rows.length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Step 2: Acquire a raw connection directly from the pool (simulating connection checkout for next request)
+    const rawClient = await appPool.connect();
+    try {
+      // Assert all session variables are cleared/empty
+      const clinicSetting = await rawClient.query("SELECT current_setting('app.clinic_id', true) AS val;");
+      expect(clinicSetting.rows[0].val).toBeFalsy();
+
+      const roleSetting = await rawClient.query("SELECT current_setting('app.staff_role', true) AS val;");
+      expect(roleSetting.rows[0].val).toBeFalsy();
+
+      const patientSetting = await rawClient.query("SELECT current_setting('app.patient_account_id', true) AS val;");
+      expect(patientSetting.rows[0].val).toBeFalsy();
+
+      const superAdminSetting = await rawClient.query("SELECT current_setting('app.is_super_admin', true) AS val;");
+      expect(superAdminSetting.rows[0].val).toBeFalsy();
+
+      // Assert tenant queries return ZERO rows when context is not established
+      const aptRows = await rawClient.query("SELECT * FROM appointments;");
+      expect(aptRows.rows.length).toBe(0);
+
+      const patRows = await rawClient.query("SELECT * FROM patients;");
+      expect(patRows.rows.length).toBe(0);
+
+      const auditRows = await rawClient.query("SELECT * FROM audit_log;");
+      expect(auditRows.rows.length).toBe(0);
+    } finally {
+      rawClient.release();
+    }
+  });
+
+  it("35. Password Reset Security: auth_consume_password_reset_token atomically consumes token and revokes all active sessions", async () => {
+    // 1. Create a staff user
+    const staffRes = await adminClient.query(
+      `INSERT INTO staff_users (clinic_id, name, email, role, password_hash)
+       VALUES ($1, 'Reset Staff', 'reset.staff@clinic-alpha.com', 'doctor', 'hash')
+       RETURNING id;`,
+      [clinicAId]
+    );
+    const resetStaffId = staffRes.rows[0].id;
+
+    // 2. Create 2 active sessions for this user
+    await adminClient.query(
+      `INSERT INTO sessions (user_id, token_hash, expires_at)
+       VALUES ($1, 'token_sess_1', now() + interval '2 hours');`,
+      [resetStaffId]
+    );
+    await adminClient.query(
+      `INSERT INTO sessions (user_id, token_hash, expires_at)
+       VALUES ($1, 'token_sess_2', now() + interval '2 hours');`,
+      [resetStaffId]
+    );
+
+    // 3. Create a valid password reset token
+    const tokenHash = "prt_atomic_revoke_test_hash";
+    await adminClient.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, now() + interval '30 minutes');`,
+      [resetStaffId, tokenHash]
+    );
+
+    // 4. Consume token via clinicpilot_app connection
+    const client = await appPool.connect();
+    try {
+      const consumeRes = await client.query(
+        `SELECT * FROM auth_consume_password_reset_token($1);`,
+        [tokenHash]
+      );
+      expect(consumeRes.rows.length).toBe(1);
+      expect(consumeRes.rows[0].is_valid).toBe(true);
+      expect(consumeRes.rows[0].user_id).toBe(resetStaffId);
+
+      // 5. Verify both sessions are now revoked (revoked_at IS NOT NULL)
+      const sessCheck = await adminClient.query(
+        `SELECT id, revoked_at FROM sessions WHERE user_id = $1;`,
+        [resetStaffId]
+      );
+      expect(sessCheck.rows.length).toBe(2);
+      expect(sessCheck.rows.every((s) => s.revoked_at !== null)).toBe(true);
+
+      // Re-consuming the same token fails (returns is_valid = false)
+      const reuseRes = await client.query(
+        `SELECT * FROM auth_consume_password_reset_token($1);`,
+        [tokenHash]
+      );
+      expect(reuseRes.rows[0].is_valid).toBe(false);
+    } finally {
+      client.release();
+    }
+  });
+
+  it("36. System Clinic Guard: platform system clinic accounts cannot be used for staff login (raises 42501)", async () => {
+    // 1. Find or verify system clinic
+    const sysClinicRes = await adminClient.query(
+      `SELECT id FROM clinics WHERE slug = 'system-platform' OR is_system = true LIMIT 1;`
+    );
+    expect(sysClinicRes.rows.length).toBe(1);
+    const systemClinicId = sysClinicRes.rows[0].id;
+
+    // 2. Insert a staff user inside the system clinic
+    const sysStaffEmail = "system.admin.breach@platform.internal";
+    await adminClient.query(
+      `INSERT INTO staff_users (clinic_id, name, email, role, password_hash)
+       VALUES ($1, 'System Infiltrator', $2, 'owner', crypt('SecretPass123!', gen_salt('bf')))
+       ON CONFLICT (email) DO NOTHING;`,
+      [systemClinicId, sysStaffEmail]
+    );
+
+    // 3. Attempting staff lookup by email for system clinic account raises 42501
+    const client = await appPool.connect();
+    try {
+      let lookupErr: any = null;
+      try {
+        await client.query(`SELECT * FROM auth_lookup_staff_by_email($1);`, [sysStaffEmail]);
+      } catch (err: any) {
+        lookupErr = err;
+      }
+      expect(lookupErr).toBeDefined();
+      expect(lookupErr.code).toBe("42501");
+      expect(lookupErr.message).toContain("Platform system clinic accounts cannot be used for staff login");
+
+      // 4. Attempting auth_verify_staff_credentials for system clinic account raises 42501
+      let verifyErr: any = null;
+      try {
+        await client.query(`SELECT * FROM auth_verify_staff_credentials($1, 'SecretPass123!');`, [sysStaffEmail]);
+      } catch (err: any) {
+        verifyErr = err;
+      }
+      expect(verifyErr).toBeDefined();
+      expect(verifyErr.code).toBe("42501");
+      expect(verifyErr.message).toContain("Platform system clinic accounts cannot be used for staff login");
+    } finally {
+      client.release();
+    }
   });
 });

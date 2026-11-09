@@ -14,6 +14,7 @@ ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS link_lockout_until timesta
 ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS failed_link_attempts integer NOT NULL DEFAULT 0;
 ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
 ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS phone_verified_at timestamptz;
+ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS language text NOT NULL DEFAULT 'en';
 
 -- Clinics Enhancements
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'starter';
@@ -31,10 +32,8 @@ DROP POLICY IF EXISTS patient_link_codes_tenant_policy ON patient_link_codes;
 CREATE POLICY patient_link_codes_tenant_policy ON patient_link_codes FOR ALL
   USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid);
 
--- Super-admin platform policy for patient_link_codes
+-- Super-admin policy removed from patient_link_codes per least-privilege requirement
 DROP POLICY IF EXISTS patient_link_codes_super_admin_policy ON patient_link_codes;
-CREATE POLICY patient_link_codes_super_admin_policy ON patient_link_codes FOR ALL
-  USING (current_setting('app.is_super_admin', true) = 'true');
 
 -- staff_invites: Reads visible to clinic staff; writes require app.staff_role = 'owner'; super_admin has full platform access
 DROP POLICY IF EXISTS staff_invites_tenant_policy ON staff_invites;
@@ -72,13 +71,28 @@ CREATE POLICY staff_invites_delete_policy ON staff_invites FOR DELETE
 CREATE POLICY staff_invites_super_admin_policy ON staff_invites FOR ALL
   USING (current_setting('app.is_super_admin', true) = 'true');
 
--- audit_log: INSERT policy allowing clinic_id IS NULL, matching clinic_id, or super_admin
+-- audit_log: Direct INSERT requires non-null matching clinic_id. NULL-clinic inserts must use audit_log_system_event.
 DROP POLICY IF EXISTS audit_log_insert_policy ON audit_log;
 CREATE POLICY audit_log_insert_policy ON audit_log FOR INSERT
   WITH CHECK (
-    clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
-    OR clinic_id IS NULL
-    OR current_setting('app.is_super_admin', true) = 'true'
+    clinic_id IS NOT NULL AND clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
+  );
+
+-- audit_log: Clinic SELECT is strictly limited to clinic owner (app.staff_role = 'owner')
+DROP POLICY IF EXISTS audit_log_tenant_select ON audit_log;
+DROP POLICY IF EXISTS audit_log_clinic_select_policy ON audit_log;
+CREATE POLICY audit_log_clinic_select_policy ON audit_log FOR SELECT
+  USING (
+    clinic_id IS NOT NULL
+    AND clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
+    AND current_setting('app.staff_role', true) = 'owner'
+  );
+
+-- audit_log: Super-admin SELECT policy
+DROP POLICY IF EXISTS audit_log_super_admin_select ON audit_log;
+CREATE POLICY audit_log_super_admin_select ON audit_log FOR SELECT
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
   );
 
 -- Patient SELECT policies on clinics, doctors, and services (for linked patient accounts)
@@ -116,42 +130,155 @@ CREATE POLICY services_patient_select ON services FOR SELECT
 REVOKE ALL ON password_reset_tokens FROM clinicpilot_app;
 REVOKE ALL ON magic_link_tokens FROM clinicpilot_app;
 
+-- staff_users: Remove direct INSERT and DELETE grants. Creation is only via invite-accept SECURITY DEFINER function.
+REVOKE INSERT, DELETE ON staff_users FROM clinicpilot_app;
+
 -- Column-Level SELECT Grants on staff_users: Exclude password_hash
--- Table-level SELECT is revoked; only permitted non-secret columns are granted.
 REVOKE SELECT ON staff_users FROM clinicpilot_app;
 GRANT SELECT (id, clinic_id, name, email, role, is_active, created_at) ON staff_users TO clinicpilot_app;
+
+-- Column-Level UPDATE on staff_users: role/email/is_active governed by owner check trigger; name by self/owner.
+GRANT UPDATE (name, email, is_active, role) ON staff_users TO clinicpilot_app;
 
 -- Column-Level UPDATE Grants on clinics: Exclude privileged columns (plan, is_active, slug, id, created_at)
 REVOKE UPDATE ON clinics FROM clinicpilot_app;
 GRANT UPDATE (name, city, timezone, updated_at) ON clinics TO clinicpilot_app;
 
--- Ensure clinicpilot_app has access to patient_link_codes for staff generation
-GRANT SELECT, INSERT, UPDATE, DELETE ON patient_link_codes TO clinicpilot_app;
+-- patient_accounts: Column-level UPDATE only on profile columns (name, language). Lockout & verification columns require SECURITY DEFINER functions.
+REVOKE UPDATE ON patient_accounts FROM clinicpilot_app;
+GRANT UPDATE (name, language) ON patient_accounts TO clinicpilot_app;
 
--- staff_users: Grant column-level UPDATE on role, but enforce at policy/trigger level that role changes require 'owner'
-GRANT UPDATE (role) ON staff_users TO clinicpilot_app;
+-- patient_link_codes: Staff get INSERT, SELECT, DELETE only. Expiry & attempts modified exclusively via SECURITY DEFINER function.
+REVOKE UPDATE ON patient_link_codes FROM clinicpilot_app;
+GRANT SELECT, INSERT, DELETE ON patient_link_codes TO clinicpilot_app;
 
-CREATE OR REPLACE FUNCTION check_staff_role_change_permission()
+-- ============================================================================
+-- 4. Triggers: Owner Protection, Role Governance & Session Immutability
+-- ============================================================================
+
+-- A. Staff User Update & Role Governance Trigger
+CREATE OR REPLACE FUNCTION check_staff_user_update_permission()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  v_active_owners_count bigint;
 BEGIN
-  IF NEW.role IS DISTINCT FROM OLD.role THEN
+  -- 1. Protect last active owner from deactivation, demotion, or removal
+  IF OLD.role = 'owner' AND OLD.is_active = true THEN
+    IF (NEW.is_active = false) OR (NEW.role IS DISTINCT FROM 'owner') THEN
+      SELECT count(*) INTO v_active_owners_count
+      FROM staff_users
+      WHERE clinic_id = OLD.clinic_id
+        AND role = 'owner'
+        AND is_active = true
+        AND id <> OLD.id;
+
+      IF v_active_owners_count = 0 THEN
+        RAISE EXCEPTION 'FORBIDDEN: Cannot deactivate or demote the last active clinic owner'
+          USING ERRCODE = '42501';
+      END IF;
+    END IF;
+  END IF;
+
+  -- 2. Modifying email, is_active, or role requires owner context or super_admin
+  IF (NEW.email IS DISTINCT FROM OLD.email)
+     OR (NEW.is_active IS DISTINCT FROM OLD.is_active)
+     OR (NEW.role IS DISTINCT FROM OLD.role) THEN
     IF NULLIF(current_setting('app.staff_role', true), '') IS DISTINCT FROM 'owner'
        AND COALESCE(current_setting('app.is_super_admin', true), '') <> 'true' THEN
-      RAISE EXCEPTION 'FORBIDDEN: Only clinic owners can modify staff roles'
+      RAISE EXCEPTION 'FORBIDDEN: Only clinic owners can modify staff role, email, or active status'
         USING ERRCODE = '42501';
     END IF;
   END IF;
+
+  -- 3. Non-owner staff may only update their own display name
+  IF NULLIF(current_setting('app.staff_role', true), '') IS DISTINCT FROM 'owner'
+     AND COALESCE(current_setting('app.is_super_admin', true), '') <> 'true' THEN
+    IF NULLIF(current_setting('app.user_id', true), '') IS NOT NULL
+       AND current_setting('app.user_id', true)::uuid <> OLD.id THEN
+      RAISE EXCEPTION 'FORBIDDEN: Non-owner staff may only update their own display name'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_enforce_staff_role_change ON staff_users;
-CREATE TRIGGER trg_enforce_staff_role_change
+DROP TRIGGER IF EXISTS trg_enforce_staff_user_update ON staff_users;
+CREATE TRIGGER trg_enforce_staff_user_update
   BEFORE UPDATE ON staff_users
   FOR EACH ROW
-  EXECUTE FUNCTION check_staff_role_change_permission();
+  EXECUTE FUNCTION check_staff_user_update_permission();
+
+-- B. Prevent Deleting Last Active Owner Trigger
+CREATE OR REPLACE FUNCTION check_staff_user_delete_permission()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_active_owners_count bigint;
+BEGIN
+  IF OLD.role = 'owner' AND OLD.is_active = true THEN
+    SELECT count(*) INTO v_active_owners_count
+    FROM staff_users
+    WHERE clinic_id = OLD.clinic_id
+      AND role = 'owner'
+      AND is_active = true
+      AND id <> OLD.id;
+
+    IF v_active_owners_count = 0 THEN
+      RAISE EXCEPTION 'FORBIDDEN: Cannot delete the last active clinic owner'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prevent_last_owner_delete ON staff_users;
+CREATE TRIGGER trg_prevent_last_owner_delete
+  BEFORE DELETE ON staff_users
+  FOR EACH ROW
+  EXECUTE FUNCTION check_staff_user_delete_permission();
+
+-- C. Session Immutability Trigger (sessions and patient_sessions)
+CREATE OR REPLACE FUNCTION enforce_session_immutability()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- revoked_at can be set (from NULL to a timestamp), but once set, can never be cleared (to NULL) or modified
+  IF OLD.revoked_at IS NOT NULL THEN
+    IF NEW.revoked_at IS NULL OR NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+      RAISE EXCEPTION 'FORBIDDEN: Session cannot be un-revoked once revoked'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  -- expires_at can never be extended
+  IF NEW.expires_at > OLD.expires_at THEN
+    RAISE EXCEPTION 'FORBIDDEN: Session expiry cannot be extended'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_staff_session_immutability ON sessions;
+CREATE TRIGGER trg_enforce_staff_session_immutability
+  BEFORE UPDATE ON sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_session_immutability();
+
+DROP TRIGGER IF EXISTS trg_enforce_patient_session_immutability ON patient_sessions;
+CREATE TRIGGER trg_enforce_patient_session_immutability
+  BEFORE UPDATE ON patient_sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_session_immutability();
 
 -- ============================================================================
 -- 5. SECURITY DEFINER Functions with Context Validation (app.patient_account_id / app.clinic_id)
@@ -546,6 +673,249 @@ $$;
 
 REVOKE ALL ON FUNCTION super_admin_get_platform_metrics() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION super_admin_get_platform_metrics() TO clinicpilot_app;
+
+-- Function 4: System & Pre-login Audit Event Logging (NULL clinic_id inserts via allowlist)
+DROP FUNCTION IF EXISTS audit_log_system_event(text, text, text, text, text, text);
+CREATE OR REPLACE FUNCTION audit_log_system_event(
+  p_actor_id text,
+  p_actor_role text,
+  p_action text,
+  p_resource text,
+  p_resource_id text,
+  p_details text
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  -- Strict allowlist: Action must begin with 'super_admin:', 'auth:', or 'system:'
+  IF p_action !~ '^(super_admin:|auth:|system:)[a-zA-Z0-9_:-]+$' THEN
+    RAISE EXCEPTION 'FORBIDDEN: Action % is not in the system audit action allowlist', p_action
+      USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO audit_log (
+    clinic_id,
+    actor_id,
+    actor_role,
+    action,
+    resource,
+    resource_id,
+    details
+  ) VALUES (
+    NULL,
+    p_actor_id,
+    p_actor_role,
+    p_action,
+    p_resource,
+    p_resource_id,
+    p_details
+  )
+  RETURNING id INTO v_id;
+
+  RETURN v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION audit_log_system_event(text, text, text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION audit_log_system_event(text, text, text, text, text, text) TO clinicpilot_app;
+
+-- Function 5: Atomic Staff Invite Acceptance & User Creation
+DROP FUNCTION IF EXISTS auth_accept_staff_invite(text, text, text);
+CREATE OR REPLACE FUNCTION auth_accept_staff_invite(
+  p_token_hash text,
+  p_name text,
+  p_password_hash text
+)
+RETURNS TABLE (
+  user_id uuid,
+  clinic_id uuid,
+  name text,
+  email text,
+  role text,
+  success boolean,
+  error_code text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_invite staff_invites%ROWTYPE;
+  v_user_id uuid;
+  v_name text;
+BEGIN
+  SELECT * INTO v_invite
+  FROM staff_invites
+  WHERE token_hash = p_token_hash AND used_at IS NULL AND expires_at > now()
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::uuid, NULL::text, NULL::text, NULL::text, false, 'INVALID_OR_EXPIRED_INVITE';
+    RETURN;
+  END IF;
+
+  v_name := coalesce(NULLIF(trim(p_name), ''), v_invite.name, 'Staff Member');
+
+  UPDATE staff_invites SET used_at = now() WHERE id = v_invite.id;
+
+  INSERT INTO staff_users (clinic_id, name, email, role, password_hash, is_active)
+  VALUES (v_invite.clinic_id, v_name, lower(trim(v_invite.email)), v_invite.role, p_password_hash, true)
+  RETURNING id INTO v_user_id;
+
+  RETURN QUERY SELECT v_user_id, v_invite.clinic_id, v_name, lower(trim(v_invite.email)), v_invite.role, true, 'SUCCESS';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION auth_accept_staff_invite(text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION auth_accept_staff_invite(text, text, text) TO clinicpilot_app;
+
+-- Function 6: Password Reset Token Consumption with Immediate Session Revocation
+DROP FUNCTION IF EXISTS auth_consume_password_reset_token(text);
+CREATE OR REPLACE FUNCTION auth_consume_password_reset_token(p_token_hash text)
+RETURNS TABLE (
+  user_id uuid,
+  clinic_id uuid,
+  is_valid boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_rec password_reset_tokens%ROWTYPE;
+  v_clinic_id uuid;
+BEGIN
+  SELECT * INTO v_rec
+  FROM password_reset_tokens
+  WHERE token_hash = p_token_hash AND used_at IS NULL AND expires_at > now()
+  FOR UPDATE;
+
+  IF FOUND THEN
+    UPDATE password_reset_tokens SET used_at = now() WHERE id = v_rec.id;
+    -- Revoke all active sessions of this user in the same transaction (Requirement 7)
+    UPDATE sessions SET revoked_at = now() WHERE user_id = v_rec.user_id AND revoked_at IS NULL;
+    SELECT clinic_id INTO v_clinic_id FROM staff_users WHERE id = v_rec.user_id;
+    RETURN QUERY SELECT v_rec.user_id, v_clinic_id, true;
+  ELSE
+    RETURN QUERY SELECT NULL::uuid, NULL::uuid, false;
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION auth_consume_password_reset_token(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION auth_consume_password_reset_token(text) TO clinicpilot_app;
+
+-- Function 7: Staff Lookup by Email with System Clinic Login Guard & Consistent Timing Equalization
+DROP FUNCTION IF EXISTS auth_lookup_staff_by_email(text);
+CREATE OR REPLACE FUNCTION auth_lookup_staff_by_email(p_email text)
+RETURNS TABLE (
+  user_id uuid,
+  clinic_id uuid,
+  name text,
+  email text,
+  role text,
+  password_hash text,
+  is_active boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user staff_users%ROWTYPE;
+  v_is_system boolean;
+  v_dummy_hash text;
+BEGIN
+  SELECT * INTO v_user
+  FROM staff_users
+  WHERE lower(staff_users.email) = lower(p_email)
+  LIMIT 1;
+
+  IF FOUND THEN
+    -- Check/guard: Platform system clinic cannot be used for staff login (Requirement 8)
+    SELECT coalesce(is_system, false) OR (slug = 'system-platform')
+    INTO v_is_system
+    FROM clinics
+    WHERE id = v_user.clinic_id;
+
+    IF v_is_system THEN
+      RAISE EXCEPTION 'FORBIDDEN: Platform system clinic accounts cannot be used for staff login'
+        USING ERRCODE = '42501';
+    END IF;
+
+    -- Equalize timing: calculate crypt in the same layer on hit
+    v_dummy_hash := crypt('timing_equalizer_real_user', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy');
+
+    RETURN QUERY SELECT v_user.id, v_user.clinic_id, v_user.name, v_user.email, v_user.role, v_user.password_hash, v_user.is_active;
+  ELSE
+    -- Constant timing dummy bcrypt calculation in the exact same layer on miss
+    v_dummy_hash := crypt('dummy_password_timing_defense', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy');
+    RETURN;
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION auth_lookup_staff_by_email(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION auth_lookup_staff_by_email(text) TO clinicpilot_app;
+
+-- Function 8: Staff Credentials Verification in Database Layer (Consistent Timing & System Guard)
+DROP FUNCTION IF EXISTS auth_verify_staff_credentials(text, text);
+CREATE OR REPLACE FUNCTION auth_verify_staff_credentials(p_email text, p_password text)
+RETURNS TABLE (
+  user_id uuid,
+  clinic_id uuid,
+  name text,
+  email text,
+  role text,
+  is_valid boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user staff_users%ROWTYPE;
+  v_is_system boolean;
+  v_match boolean;
+  c_dummy_hash CONSTANT text := '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+BEGIN
+  SELECT * INTO v_user
+  FROM staff_users
+  WHERE lower(staff_users.email) = lower(p_email)
+  LIMIT 1;
+
+  IF FOUND THEN
+    SELECT coalesce(is_system, false) OR (slug = 'system-platform')
+    INTO v_is_system
+    FROM clinics
+    WHERE id = v_user.clinic_id;
+
+    IF v_is_system THEN
+      RAISE EXCEPTION 'FORBIDDEN: Platform system clinic accounts cannot be used for staff login'
+        USING ERRCODE = '42501';
+    END IF;
+
+    v_match := (v_user.password_hash = crypt(p_password, v_user.password_hash));
+    IF v_match AND v_user.is_active THEN
+      RETURN QUERY SELECT v_user.id, v_user.clinic_id, v_user.name, v_user.email, v_user.role, true;
+    ELSE
+      RETURN QUERY SELECT NULL::uuid, NULL::uuid, NULL::text, NULL::text, NULL::text, false;
+    END IF;
+  ELSE
+    -- Dummy crypt in the exact same layer
+    PERFORM (c_dummy_hash = crypt(p_password, c_dummy_hash));
+    RETURN QUERY SELECT NULL::uuid, NULL::uuid, NULL::text, NULL::text, NULL::text, false;
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION auth_verify_staff_credentials(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION auth_verify_staff_credentials(text, text) TO clinicpilot_app;
 
 -- ============================================================================
 -- 6. M7 Patient Write Functions Signatures (SECURITY DEFINER with Slot & Rule Re-checks)

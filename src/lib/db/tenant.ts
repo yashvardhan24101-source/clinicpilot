@@ -40,11 +40,13 @@ export async function withClinicContext<T>(
 
   let fn: (client: PoolClient) => Promise<T>;
   let staffRole = "";
+  let userId = "";
 
   if (typeof fnOrOptions === "function") {
     fn = fnOrOptions;
     if (maybeFn && typeof maybeFn === "object") {
       staffRole = maybeFn.staffRole || "";
+      userId = maybeFn.userId || "";
     }
   } else if (typeof fnOrOptions === "string") {
     staffRole = fnOrOptions;
@@ -55,6 +57,7 @@ export async function withClinicContext<T>(
     }
   } else if (typeof fnOrOptions === "object") {
     staffRole = fnOrOptions.staffRole || "";
+    userId = fnOrOptions.userId || "";
     if (typeof maybeFn === "function") {
       fn = maybeFn;
     } else {
@@ -82,6 +85,7 @@ export async function withClinicContext<T>(
 
     await client.query("SELECT set_config('app.clinic_id', $1, true);", [clinicId]);
     await client.query("SELECT set_config('app.staff_role', $1, true);", [staffRole]);
+    await client.query("SELECT set_config('app.user_id', $1, true);", [userId]);
     await client.query("SELECT set_config('app.is_super_admin', 'false', true);");
     await client.query("SELECT assert_mutually_exclusive_context();");
 
@@ -96,6 +100,7 @@ export async function withClinicContext<T>(
     try {
       await client.query("SELECT set_config('app.clinic_id', '', false);");
       await client.query("SELECT set_config('app.staff_role', '', false);");
+      await client.query("SELECT set_config('app.user_id', '', false);");
       await client.query("SELECT set_config('app.patient_account_id', '', false);");
       await client.query("SELECT set_config('app.is_super_admin', 'false', false);");
     } catch {
@@ -149,6 +154,7 @@ export async function withPatientContext<T>(
     try {
       await client.query("SELECT set_config('app.clinic_id', '', false);");
       await client.query("SELECT set_config('app.staff_role', '', false);");
+      await client.query("SELECT set_config('app.user_id', '', false);");
       await client.query("SELECT set_config('app.patient_account_id', '', false);");
       await client.query("SELECT set_config('app.is_super_admin', 'false', false);");
     } catch {
@@ -180,10 +186,9 @@ export async function withSuperAdminContext<T>(
     await client.query("BEGIN;");
 
     // Super-admin access is strictly audited before granting cross-tenant privilege.
-    // clinic_id is explicitly NULL for platform events.
+    // Platform events with NULL clinic_id are recorded via audit_log_system_event (SECURITY DEFINER with allowlist check).
     await client.query(
-      `INSERT INTO audit_log (clinic_id, actor_id, actor_role, action, resource, details)
-       VALUES (NULL, $1, 'super_admin', $2, 'platform', $3);`,
+      `SELECT audit_log_system_event($1, 'super_admin', $2, 'platform', NULL, $3);`,
       [session.userId || "super_admin", `super_admin:${action}`, JSON.stringify(details)]
     );
 
@@ -199,6 +204,7 @@ export async function withSuperAdminContext<T>(
     try {
       await client.query("SELECT set_config('app.clinic_id', '', false);");
       await client.query("SELECT set_config('app.staff_role', '', false);");
+      await client.query("SELECT set_config('app.user_id', '', false);");
       await client.query("SELECT set_config('app.patient_account_id', '', false);");
       await client.query("SELECT set_config('app.is_super_admin', 'false', false);");
     } catch {
