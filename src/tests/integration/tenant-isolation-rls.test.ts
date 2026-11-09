@@ -1205,27 +1205,27 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
 
     // Create an active session and a revoked session
     const sessRes = await adminClient.query(
-      `INSERT INTO sessions (user_id, token_hash, expires_at, revoked_at)
-       VALUES ($1, 'revoked_token_hash_1', now() + interval '1 hour', now() - interval '5 minutes')
-       RETURNING id, expires_at;`,
-      [staffId]
+      `INSERT INTO sessions (user_id, clinic_id, expires_at, revoked_at)
+       VALUES ($1, $2, now() + interval '1 hour', now() - interval '5 minutes')
+       RETURNING jti, expires_at;`,
+      [staffId, clinicAId]
     );
-    const revokedSessId = sessRes.rows[0].id;
+    const revokedSessJti = sessRes.rows[0].jti;
 
     const activeSessRes = await adminClient.query(
-      `INSERT INTO sessions (user_id, token_hash, expires_at)
-       VALUES ($1, 'active_token_hash_2', now() + interval '1 hour')
-       RETURNING id, expires_at;`,
-      [staffId]
+      `INSERT INTO sessions (user_id, clinic_id, expires_at)
+       VALUES ($1, $2, now() + interval '1 hour')
+       RETURNING jti, expires_at;`,
+      [staffId, clinicAId]
     );
-    const activeSessId = activeSessRes.rows[0].id;
+    const activeSessJti = activeSessRes.rows[0].jti;
 
     const client = await appPool.connect();
     try {
       // 4A: Attempting to un-revoke a revoked session (revoked_at = NULL) -> fails with 42501
       let unrevokeErr: any = null;
       try {
-        await client.query(`UPDATE sessions SET revoked_at = NULL WHERE id = $1;`, [revokedSessId]);
+        await client.query(`UPDATE sessions SET revoked_at = NULL WHERE jti = $1;`, [revokedSessJti]);
       } catch (err: any) {
         unrevokeErr = err;
       }
@@ -1236,7 +1236,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
       // 4B: Attempting to extend expires_at on a session -> fails with 42501
       let extendErr: any = null;
       try {
-        await client.query(`UPDATE sessions SET expires_at = now() + interval '7 days' WHERE id = $1;`, [activeSessId]);
+        await client.query(`UPDATE sessions SET expires_at = now() + interval '7 days' WHERE jti = $1;`, [activeSessJti]);
       } catch (err: any) {
         extendErr = err;
       }
@@ -1246,16 +1246,16 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
 
       // 4C: Patient sessions immutability check
       const patSessRes = await adminClient.query(
-        `INSERT INTO patient_sessions (patient_account_id, token_hash, expires_at, revoked_at)
-         VALUES ($1, 'pat_revoked_hash', now() + interval '1 hour', now() - interval '2 minutes')
-         RETURNING id;`,
+        `INSERT INTO patient_sessions (account_id, expires_at, revoked_at)
+         VALUES ($1, now() + interval '1 hour', now() - interval '2 minutes')
+         RETURNING jti;`,
         [patientAccountAId]
       );
-      const patRevokedSessId = patSessRes.rows[0].id;
+      const patRevokedSessJti = patSessRes.rows[0].jti;
 
       let patUnrevokeErr: any = null;
       try {
-        await client.query(`UPDATE patient_sessions SET revoked_at = NULL WHERE id = $1;`, [patRevokedSessId]);
+        await client.query(`UPDATE patient_sessions SET revoked_at = NULL WHERE jti = $1;`, [patRevokedSessJti]);
       } catch (err: any) {
         patUnrevokeErr = err;
       }
@@ -1406,14 +1406,14 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
 
     // 2. Create 2 active sessions for this user
     await adminClient.query(
-      `INSERT INTO sessions (user_id, token_hash, expires_at)
-       VALUES ($1, 'token_sess_1', now() + interval '2 hours');`,
-      [resetStaffId]
+      `INSERT INTO sessions (user_id, clinic_id, expires_at)
+       VALUES ($1, $2, now() + interval '2 hours');`,
+      [resetStaffId, clinicAId]
     );
     await adminClient.query(
-      `INSERT INTO sessions (user_id, token_hash, expires_at)
-       VALUES ($1, 'token_sess_2', now() + interval '2 hours');`,
-      [resetStaffId]
+      `INSERT INTO sessions (user_id, clinic_id, expires_at)
+       VALUES ($1, $2, now() + interval '2 hours');`,
+      [resetStaffId, clinicAId]
     );
 
     // 3. Create a valid password reset token
@@ -1437,7 +1437,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
 
       // 5. Verify both sessions are now revoked (revoked_at IS NOT NULL)
       const sessCheck = await adminClient.query(
-        `SELECT id, revoked_at FROM sessions WHERE user_id = $1;`,
+        `SELECT jti, revoked_at FROM sessions WHERE user_id = $1;`,
         [resetStaffId]
       );
       expect(sessCheck.rows.length).toBe(2);
@@ -1457,7 +1457,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
   it("36. System Clinic Guard: platform system clinic accounts cannot be used for staff login (raises 42501)", async () => {
     // 1. Find or verify system clinic
     const sysClinicRes = await adminClient.query(
-      `SELECT id FROM clinics WHERE slug = 'system-platform' OR is_system = true LIMIT 1;`
+      `SELECT id FROM clinics WHERE slug = 'system-platform' LIMIT 1;`
     );
     expect(sysClinicRes.rows.length).toBe(1);
     const systemClinicId = sysClinicRes.rows[0].id;

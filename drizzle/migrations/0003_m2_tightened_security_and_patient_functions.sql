@@ -19,6 +19,8 @@ ALTER TABLE patient_accounts ADD COLUMN IF NOT EXISTS language text NOT NULL DEF
 -- Clinics Enhancements
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'starter';
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS is_system boolean NOT NULL DEFAULT false;
+UPDATE clinics SET is_system = true WHERE slug = 'system-platform';
 
 -- Staff Invites Enhancements (Allow super_admin / platform invites without pre-existing staff user)
 ALTER TABLE staff_invites ALTER COLUMN created_by DROP NOT NULL;
