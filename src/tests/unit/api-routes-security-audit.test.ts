@@ -13,6 +13,7 @@ describe("Group F.2: Automated API Route Security & Guard Audit", () => {
     "/api/auth/otp/send",
     "/api/auth/otp/verify",
     "/api/auth/google",
+    "/api/auth/forgot-password",
     "/api/health",
     "/api/webhooks",
     "/api/doctors/search",

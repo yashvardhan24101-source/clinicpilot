@@ -57,7 +57,8 @@ export function LoginClient({ flags }: LoginClientProps) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState<{ type: "success" | "info" | "error"; text: string } | null>(null);
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
 
   // Indian Mobile OTP State
   const [patientPhone, setPatientPhone] = useState("");
@@ -120,9 +121,39 @@ export function LoginClient({ flags }: LoginClientProps) {
     }
   };
 
-  const handleForgotPassword = () => {
-    setForgotSent(true);
-    setTimeout(() => setForgotSent(false), 4000);
+  const handleForgotPassword = async () => {
+    setError(null);
+    if (!email.trim()) {
+      setForgotMessage({
+        type: "error",
+        text: "Please enter your clinic email above first, then click 'Forgot?'.",
+      });
+      return;
+    }
+
+    setIsForgotLoading(true);
+    setForgotMessage(null);
+    try {
+      const res = await api.forgotPassword(email.trim());
+      setForgotMessage({
+        type: res.isDemo ? "info" : "success",
+        text: res.message || "Password reset instructions have been dispatched. Check your inbox.",
+      });
+    } catch {
+      if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
+        setForgotMessage({
+          type: "info",
+          text: "Demo Mode Active: The default password for all demo staff accounts is 'demo123'.",
+        });
+      } else {
+        setForgotMessage({
+          type: "success",
+          text: "If an active account exists with that email, a password reset link has been dispatched.",
+        });
+      }
+    } finally {
+      setIsForgotLoading(false);
+    }
   };
 
   const handleDemoStaffLogin = async (staffRole: "receptionist" | "doctor" | "owner") => {
@@ -353,15 +384,6 @@ export function LoginClient({ flags }: LoginClientProps) {
           </div>
         )}
 
-        {/* Forgot Password Success Notice */}
-        {forgotSent && (
-          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-mint/15 border border-mint/40 text-ink text-xs animate-in fade-in">
-            <CheckCircle2 className="h-4 w-4 text-mint shrink-0 mt-0.5" />
-            <span className="leading-snug font-medium">
-              Password reset link has been dispatched to clinic admin. Check inbox.
-            </span>
-          </div>
-        )}
 
         {/* TAB 1: PATIENT OTP LOGIN (Only when role === "patient" and patientPortal enabled) */}
         {flags.patientPortal && role === "patient" && (
@@ -549,9 +571,10 @@ export function LoginClient({ flags }: LoginClientProps) {
                   <button
                     type="button"
                     onClick={handleForgotPassword}
+                    disabled={isForgotLoading}
                     className="text-xs font-semibold text-signal hover:underline py-1 px-1.5 rounded focus-visible:ring-2 focus-visible:ring-signal"
                   >
-                    Forgot?
+                    {isForgotLoading ? "Sending..." : "Forgot?"}
                   </button>
                 </div>
                 <div className="relative">
@@ -575,6 +598,28 @@ export function LoginClient({ flags }: LoginClientProps) {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+
+                {/* Inline Forgot Password Status Notice */}
+                {forgotMessage && (
+                  <div
+                    role="alert"
+                    aria-live="polite"
+                    className={`mt-2 flex items-start gap-2 p-2.5 rounded-xl text-xs animate-in fade-in ${
+                      forgotMessage.type === "error"
+                        ? "bg-alert-subtle border border-alert/30 text-alert-foreground"
+                        : forgotMessage.type === "info"
+                        ? "bg-signal-subtle border border-signal/30 text-signal"
+                        : "bg-mint/15 border border-mint/40 text-ink"
+                    }`}
+                  >
+                    {forgotMessage.type === "error" ? (
+                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-alert" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-mint" />
+                    )}
+                    <span className="leading-snug font-medium">{forgotMessage.text}</span>
+                  </div>
+                )}
               </div>
 
               <div className="pt-1 space-y-2">

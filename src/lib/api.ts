@@ -216,7 +216,7 @@ export const api = {
   getMe: () => request<UserSession>("/auth/me"),
 
   forgotPassword: (email: string) => {
-    return request<{ message: string }>("/auth/forgot-password", {
+    return request<{ success: boolean; isDemo?: boolean; message: string }>("/auth/forgot-password", {
       method: "POST",
       body: JSON.stringify({ email }),
     });
