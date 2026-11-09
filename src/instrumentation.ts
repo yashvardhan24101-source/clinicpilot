@@ -15,8 +15,8 @@ export async function register() {
     const { validateSessionSecret } = await import("@/lib/auth-session");
     validateSessionSecret(process.env.SESSION_SECRET);
 
-    // Database RLS & Least-Privilege Verification (when DATABASE_URL is configured)
-    if (process.env.DATABASE_URL) {
+    // Database RLS & Least-Privilege Verification (when DATABASE_URL is configured and not running in DEMO_MODE)
+    if (process.env.DATABASE_URL && process.env.DEMO_MODE !== "true" && process.env.NEXT_PUBLIC_DEMO_MODE !== "true") {
       const { verifyAppDatabaseSecurity } = await import("@/lib/db");
       await verifyAppDatabaseSecurity();
     }

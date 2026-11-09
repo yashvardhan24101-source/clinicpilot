@@ -558,4 +558,430 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
       client.release();
     }
   });
+
+  it("19. Patient-context audit: SECURITY DEFINER verifies account is linked to clinic before writing audit row", async () => {
+    // Linked clinic: Patient Account A is linked to Clinic A -> audit_patient_linked_event succeeds
+    const auditId = await withPatientContext(patientAccountAId, async (client) => {
+      const res = await client.query(
+        `SELECT audit_patient_linked_event($1, $2, 'view_report', 'reports', $3, '{"reason": "routine_check"}') AS id;`,
+        [clinicAId, patientAccountAId, reportAId]
+      );
+      return res.rows[0]?.id;
+    });
+    expect(auditId).toBeDefined();
+
+    // Verify audit entry written to audit_log
+    const auditRes = await adminClient.query(
+      `SELECT * FROM audit_log WHERE id = $1;`,
+      [auditId]
+    );
+    expect(auditRes.rows.length).toBe(1);
+    expect(auditRes.rows[0].clinic_id).toBe(clinicAId);
+    expect(auditRes.rows[0].actor_id).toBe(patientAccountAId);
+    expect(auditRes.rows[0].actor_role).toBe("patient");
+    expect(auditRes.rows[0].action).toBe("view_report");
+
+    // Unlinked clinic: Patient Account A is NOT linked to Clinic B -> audit_patient_linked_event fails with 42501
+    let unlinkedErr: any = null;
+    try {
+      await withPatientContext(patientAccountAId, async (client) => {
+        await client.query(
+          `SELECT audit_patient_linked_event($1, $2, 'view_report', 'reports', $3, '{"reason": "attempt_unauthorized"}');`,
+          [clinicBId, patientAccountAId, reportAId]
+        );
+      });
+    } catch (err: any) {
+      unlinkedErr = err;
+    }
+    expect(unlinkedErr).toBeDefined();
+    expect(unlinkedErr.message).toContain("FORBIDDEN: Patient account");
+  });
+
+  it("20. Tokens Least Privilege: direct grants on password_reset_tokens and magic_link_tokens are revoked", async () => {
+    const client = await appPool.connect();
+    try {
+      // 1. Direct SELECT on password_reset_tokens fails (42501)
+      let prtSelErr: any = null;
+      try {
+        await client.query("SELECT * FROM password_reset_tokens;");
+      } catch (err: any) {
+        prtSelErr = err;
+      }
+      expect(prtSelErr).toBeDefined();
+      expect(prtSelErr.code).toBe("42501");
+
+      // 2. Direct INSERT on password_reset_tokens fails (42501)
+      let prtInsErr: any = null;
+      try {
+        await client.query(
+          `INSERT INTO password_reset_tokens (email, token_hash, expires_at)
+           VALUES ('test@example.com', 'dummyhash123', now() + interval '1 hour');`
+        );
+      } catch (err: any) {
+        prtInsErr = err;
+      }
+      expect(prtInsErr).toBeDefined();
+      expect(prtInsErr.code).toBe("42501");
+
+      // 3. Direct SELECT on magic_link_tokens fails (42501)
+      let mltSelErr: any = null;
+      try {
+        await client.query("SELECT * FROM magic_link_tokens;");
+      } catch (err: any) {
+        mltSelErr = err;
+      }
+      expect(mltSelErr).toBeDefined();
+      expect(mltSelErr.code).toBe("42501");
+
+      // 4. Direct INSERT on magic_link_tokens fails (42501)
+      let mltInsErr: any = null;
+      try {
+        await client.query(
+          `INSERT INTO magic_link_tokens (email, token_hash, expires_at)
+           VALUES ('patient@example.com', 'dummyhash456', now() + interval '15 minutes');`
+        );
+      } catch (err: any) {
+        mltInsErr = err;
+      }
+      expect(mltInsErr).toBeDefined();
+      expect(mltInsErr.code).toBe("42501");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("21. Staff Role Context (app.staff_role): receptionist cannot insert invites or change roles; owner can", async () => {
+    // Create a staff user in Clinic A
+    const staffRes = await adminClient.query(
+      `INSERT INTO staff_users (clinic_id, name, email, role, password_hash)
+       VALUES ($1, 'Junior Staff', 'junior.staff@clinic-alpha.com', 'receptionist', 'placeholder_hash')
+       RETURNING id;`,
+      [clinicAId]
+    );
+    const juniorStaffId = staffRes.rows[0].id;
+
+    // 1. Receptionist context: cannot insert into staff_invites
+    let recInviteErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "receptionist" }, async (client) => {
+        await client.query(
+          `INSERT INTO staff_invites (clinic_id, email, name, role, token_hash, expires_at)
+           VALUES ($1, 'newreceptionist@example.com', 'New Candidate', 'receptionist', 'invitehash123', now() + interval '7 days');`,
+          [clinicAId]
+        );
+      });
+    } catch (err: any) {
+      recInviteErr = err;
+    }
+    expect(recInviteErr).toBeDefined();
+
+    // 2. Receptionist context: cannot change staff role
+    let recRoleChangeErr: any = null;
+    try {
+      await withClinicContext(clinicAId, { staffRole: "receptionist" }, async (client) => {
+        await client.query(
+          `UPDATE staff_users SET role = 'owner' WHERE id = $1;`,
+          [juniorStaffId]
+        );
+      });
+    } catch (err: any) {
+      recRoleChangeErr = err;
+    }
+    expect(recRoleChangeErr).toBeDefined();
+    expect(recRoleChangeErr.code).toBe("42501");
+    expect(recRoleChangeErr.message).toContain("Only clinic owners can modify staff roles");
+
+    // 3. Owner context: CAN insert into staff_invites
+    const inviteId = await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+      const res = await client.query(
+        `INSERT INTO staff_invites (clinic_id, email, name, role, token_hash, expires_at)
+         VALUES ($1, 'newdoc@example.com', 'Dr. New Doc', 'doctor', 'owner_invite_hash', now() + interval '7 days')
+         RETURNING id;`,
+        [clinicAId]
+      );
+      return res.rows[0].id;
+    });
+    expect(inviteId).toBeDefined();
+
+    // 4. Owner context: CAN update staff role
+    await withClinicContext(clinicAId, { staffRole: "owner" }, async (client) => {
+      const res = await client.query(
+        `UPDATE staff_users SET role = 'doctor' WHERE id = $1 RETURNING role;`,
+        [juniorStaffId]
+      );
+      expect(res.rows[0].role).toBe("doctor");
+    });
+  });
+
+  it("22. Column-Level Grants: staff_users SELECT excludes password_hash; clinics UPDATE excludes privileged columns", async () => {
+    // 1. SELECT password_hash on staff_users fails with 42501
+    await withClinicContext(clinicAId, async (client) => {
+      let passSelectErr: any = null;
+      try {
+        await client.query("SELECT password_hash FROM staff_users;");
+      } catch (err: any) {
+        passSelectErr = err;
+      }
+      expect(passSelectErr).toBeDefined();
+      expect(passSelectErr.code).toBe("42501");
+      expect(passSelectErr.message).toContain("password_hash");
+
+      // Non-secret columns succeed
+      const allowedCols = await client.query("SELECT id, clinic_id, name, email, role, is_active FROM staff_users;");
+      expect(allowedCols.rows.length).toBeGreaterThanOrEqual(1);
+    });
+
+    // 2. UPDATE privileged column 'plan' on clinics fails with 42501
+    await withClinicContext(clinicAId, async (client) => {
+      let planUpdErr: any = null;
+      try {
+        await client.query("UPDATE clinics SET plan = 'enterprise' WHERE id = $1;", [clinicAId]);
+      } catch (err: any) {
+        planUpdErr = err;
+      }
+      expect(planUpdErr).toBeDefined();
+      expect(planUpdErr.code).toBe("42501");
+      expect(planUpdErr.message).toContain("plan");
+
+      // UPDATE privileged column 'is_active' fails with 42501
+      let activeUpdErr: any = null;
+      try {
+        await client.query("UPDATE clinics SET is_active = false WHERE id = $1;", [clinicAId]);
+      } catch (err: any) {
+        activeUpdErr = err;
+      }
+      expect(activeUpdErr).toBeDefined();
+      expect(activeUpdErr.code).toBe("42501");
+      expect(activeUpdErr.message).toContain("is_active");
+
+      // UPDATE permitted columns (name, city, timezone, updated_at) succeeds
+      const updRes = await client.query(
+        `UPDATE clinics SET name = 'Clinic Alpha Hardened', city = 'Bengaluru South' WHERE id = $1 RETURNING name, city;`,
+        [clinicAId]
+      );
+      expect(updRes.rows[0].name).toBe("Clinic Alpha Hardened");
+      expect(updRes.rows[0].city).toBe("Bengaluru South");
+    });
+  });
+
+  it("23. Context Validation in SECURITY DEFINER Functions: mismatched account_id / clinic_id raises 42501", async () => {
+    // Calling audit_patient_linked_event with account_id different from active session context
+    await withPatientContext(patientAccountAId, async (client) => {
+      let contextMismatchErr: any = null;
+      try {
+        await client.query(
+          `SELECT audit_patient_linked_event($1, $2, 'view_report', 'reports', $3, '{}');`,
+          [clinicAId, patientAccountBId, reportAId] // patientAccountBId passed instead of active patientAccountAId
+        );
+      } catch (err: any) {
+        contextMismatchErr = err;
+      }
+      expect(contextMismatchErr).toBeDefined();
+      expect(contextMismatchErr.code).toBe("42501");
+      expect(contextMismatchErr.message).toContain("Context app.patient_account_id does not match p_account_id");
+    });
+
+    // Calling auth_link_patient_account_with_code with mismatched account_id raises 42501
+    await withPatientContext(patientAccountAId, async (client) => {
+      let linkMismatchErr: any = null;
+      try {
+        await client.query(
+          `SELECT * FROM auth_link_patient_account_with_code($1, $2, $3, 'somecodehash', 'staff_code');`,
+          [patientAccountBId, clinicAId, patientAId]
+        );
+      } catch (err: any) {
+        linkMismatchErr = err;
+      }
+      expect(linkMismatchErr).toBeDefined();
+      expect(linkMismatchErr.code).toBe("42501");
+      expect(linkMismatchErr.message).toContain("Context app.patient_account_id does not match p_account_id");
+    });
+  });
+
+  it("24. Link Codes Security: 10-minute expiry, max 5 attempts, and account lockout", async () => {
+    // Create new patient account for linking test
+    const newPatAccRes = await adminClient.query(
+      `INSERT INTO patient_accounts (name, email, phone)
+       VALUES ('Link Test User', 'link.test@example.com', '+919876543210')
+       RETURNING id;`
+    );
+    const linkTestAccId = newPatAccRes.rows[0].id;
+
+    // Create a new patient in Clinic A
+    const patRes = await adminClient.query(
+      `INSERT INTO patients (clinic_id, name, phone)
+       VALUES ($1, 'Link Test Patient', '+919876543210')
+       RETURNING id;`,
+      [clinicAId]
+    );
+    const newPatId = patRes.rows[0].id;
+
+    // 1. Test Expired Code (10-minute expiry)
+    await adminClient.query(
+      `INSERT INTO patient_link_codes (clinic_id, patient_id, code_hash, expires_at)
+       VALUES ($1, $2, 'expired_hash_123', now() - interval '1 minute');`,
+      [clinicAId, newPatId]
+    );
+
+    const expiredResult = await withPatientContext(linkTestAccId, async (client) => {
+      const res = await client.query(
+        `SELECT * FROM auth_link_patient_account_with_code($1, $2, $3, 'expired_hash_123', 'staff_code');`,
+        [linkTestAccId, clinicAId, newPatId]
+      );
+      return res.rows[0];
+    });
+    expect(expiredResult.success).toBe(false);
+    expect(expiredResult.error_code).toBe("CODE_EXPIRED");
+
+    // 2. Test Max 5 Attempts & Account Lockout
+    await adminClient.query(
+      `INSERT INTO patient_link_codes (clinic_id, patient_id, code_hash, expires_at)
+       VALUES ($1, $2, 'valid_hash_target', now() + interval '10 minutes');`,
+      [clinicAId, newPatId]
+    );
+
+    // Fail 4 times with invalid code
+    for (let i = 0; i < 4; i++) {
+      const attemptRes = await withPatientContext(linkTestAccId, async (client) => {
+        const res = await client.query(
+          `SELECT * FROM auth_link_patient_account_with_code($1, $2, $3, 'wrong_hash', 'staff_code');`,
+          [linkTestAccId, clinicAId, newPatId]
+        );
+        return res.rows[0];
+      });
+      expect(attemptRes.success).toBe(false);
+      expect(attemptRes.error_code).toBe("INVALID_CODE");
+    }
+
+    // 5th failed attempt triggers account lockout
+    const fifthAttempt = await withPatientContext(linkTestAccId, async (client) => {
+      const res = await client.query(
+        `SELECT * FROM auth_link_patient_account_with_code($1, $2, $3, 'wrong_hash', 'staff_code');`,
+        [linkTestAccId, clinicAId, newPatId]
+      );
+      return res.rows[0];
+    });
+    expect(fifthAttempt.success).toBe(false);
+
+    // 6th attempt is rejected immediately due to ACCOUNT_LOCKED
+    const lockedAttempt = await withPatientContext(linkTestAccId, async (client) => {
+      const res = await client.query(
+        `SELECT * FROM auth_link_patient_account_with_code($1, $2, $3, 'valid_hash_target', 'staff_code');`,
+        [linkTestAccId, clinicAId, newPatId]
+      );
+      return res.rows[0];
+    });
+    expect(lockedAttempt.success).toBe(false);
+    expect(lockedAttempt.error_code).toBe("ACCOUNT_LOCKED");
+  });
+
+  it("25. Patient Registration Linking Rules: links strictly on identical verified emails; never links by phone", async () => {
+    // Case 1: First signup with verified email creates new account
+    const signup1 = await adminClient.query(
+      `SELECT * FROM auth_register_patient_first_signup('google', 'sub_g_101', 'verified.user@example.com', '+919999900001', 'Verified User', true);`
+    );
+    expect(signup1.rows[0].is_new).toBe(true);
+    const firstAccId = signup1.rows[0].account_id;
+
+    // Verify phone is stored as unverified
+    const accCheck = await adminClient.query(
+      `SELECT email_verified_at, phone_verified_at FROM patient_accounts WHERE id = $1;`,
+      [firstAccId]
+    );
+    expect(accCheck.rows[0].email_verified_at).not.toBeNull();
+    expect(accCheck.rows[0].phone_verified_at).toBeNull();
+
+    // Case 2: Subsequent signup via different provider with IDENTICAL VERIFIED email links to the SAME account
+    const signup2 = await adminClient.query(
+      `SELECT * FROM auth_register_patient_first_signup('magic_link', 'sub_ml_202', 'VERIFIED.USER@example.com', '+919999900002', 'Verified User', true);`
+    );
+    expect(signup2.rows[0].is_new).toBe(false);
+    expect(signup2.rows[0].account_id).toBe(firstAccId);
+
+    // Case 3: Signup with matching phone number but UNVERIFIED or DIFFERENT email NEVER links by phone
+    const signup3 = await adminClient.query(
+      `SELECT * FROM auth_register_patient_first_signup('google', 'sub_g_303', 'another.user@example.com', '+919999900001', 'Another User', true);`
+    );
+    expect(signup3.rows[0].is_new).toBe(true);
+    expect(signup3.rows[0].account_id).not.toBe(firstAccId);
+
+    // Case 4: Signup with unverified email (email_verified = false) creates a separate account
+    const signup4 = await adminClient.query(
+      `SELECT * FROM auth_register_patient_first_signup('custom', 'sub_c_404', 'verified.user@example.com', '+919999900004', 'Unverified Duplicate', false);`
+    );
+    expect(signup4.rows[0].is_new).toBe(true);
+    expect(signup4.rows[0].account_id).not.toBe(firstAccId);
+  });
+
+  it("26. Super-Admin Clinic Request Approval: atomic creation of clinic + owner invite + audit", async () => {
+    // 1. Submit a clinic request
+    const reqRes = await adminClient.query(
+      `INSERT INTO clinic_requests (clinic_name, doctor_name, email, phone, city)
+       VALUES ('Metro Dental Care', 'Dr. Metro Owner', 'owner@metrodental.com', '+919876500000', 'Delhi')
+       RETURNING id;`
+    );
+    const requestId = reqRes.rows[0].id;
+
+    // 2. Regular non-super-admin context cannot call super_admin_approve_clinic_request
+    const client = await appPool.connect();
+    let unauthErr: any = null;
+    try {
+      await client.query(
+        `SELECT * FROM super_admin_approve_clinic_request($1, 'metro-dental', 'owner@metrodental.com', 'Dr. Metro Owner', 'tokenhash123', now() + interval '7 days');`,
+        [requestId]
+      );
+    } catch (err: any) {
+      unauthErr = err;
+    } finally {
+      client.release();
+    }
+    expect(unauthErr).toBeDefined();
+    expect(unauthErr.code).toBe("42501");
+    expect(unauthErr.message).toContain("UNAUTHORIZED: Super-admin context required");
+
+    // 3. Super-admin context successfully approves request atomically
+    const superAdminSession = {
+      userId: "usr-platform-lead-1",
+      role: "super_admin",
+      email: "lead@platform.internal",
+    };
+
+    const approveResult = await withSuperAdminContext(superAdminSession, "approve_clinic", { requestId }, async (adminCtxClient) => {
+      const res = await adminCtxClient.query(
+        `SELECT * FROM super_admin_approve_clinic_request($1, 'metro-dental', 'owner@metrodental.com', 'Dr. Metro Owner', 'tokenhash123', now() + interval '7 days');`,
+        [requestId]
+      );
+      return res.rows[0];
+    });
+
+    expect(approveResult).toBeDefined();
+    expect(approveResult.clinic_id).toBeDefined();
+    expect(approveResult.invite_id).toBeDefined();
+
+    // Verify clinic was created
+    const clinicCheck = await adminClient.query(
+      `SELECT * FROM clinics WHERE id = $1;`,
+      [approveResult.clinic_id]
+    );
+    expect(clinicCheck.rows.length).toBe(1);
+    expect(clinicCheck.rows[0].name).toBe("Metro Dental Care");
+    expect(clinicCheck.rows[0].slug).toBe("metro-dental");
+
+    // Verify owner invite was created
+    const inviteCheck = await adminClient.query(
+      `SELECT * FROM staff_invites WHERE id = $1;`,
+      [approveResult.invite_id]
+    );
+    expect(inviteCheck.rows.length).toBe(1);
+    expect(inviteCheck.rows[0].role).toBe("owner");
+    expect(inviteCheck.rows[0].clinic_id).toBe(approveResult.clinic_id);
+
+    // Verify clinic request status updated to 'approved'
+    const reqCheck = await adminClient.query(
+      `SELECT status, reviewed_at FROM clinic_requests WHERE id = $1;`,
+      [requestId]
+    );
+    expect(reqCheck.rows[0].status).toBe("approved");
+    expect(reqCheck.rows[0].reviewed_at).not.toBeNull();
+  });
 });

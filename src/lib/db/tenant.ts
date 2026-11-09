@@ -7,18 +7,61 @@ export interface SuperAdminSessionUser {
   email?: string;
 }
 
+export interface ClinicContextOptions {
+  staffRole?: string;
+  userId?: string;
+}
+
 /**
- * Executes a callback within an isolated clinic tenant context inside a PostgreSQL transaction.
- * Context is set strictly using `SELECT set_config('app.clinic_id', $1, true)` with bound parameters.
- * `is_local = true` ensures the setting applies only to the current transaction.
- * Strictly asserts that patient context is NOT active in the same transaction.
+ * Overloaded signatures for withClinicContext
  */
 export async function withClinicContext<T>(
   clinicId: string,
   fn: (client: PoolClient) => Promise<T>
+): Promise<T>;
+export async function withClinicContext<T>(
+  clinicId: string,
+  options: ClinicContextOptions,
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T>;
+export async function withClinicContext<T>(
+  clinicId: string,
+  staffRole: string,
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T>;
+export async function withClinicContext<T>(
+  clinicId: string,
+  fnOrOptions: ((client: PoolClient) => Promise<T>) | ClinicContextOptions | string,
+  maybeFn?: ((client: PoolClient) => Promise<T>) | ClinicContextOptions
 ): Promise<T> {
   if (!clinicId) {
     throw new Error("clinicId is required to establish clinic tenant context");
+  }
+
+  let fn: (client: PoolClient) => Promise<T>;
+  let staffRole = "";
+
+  if (typeof fnOrOptions === "function") {
+    fn = fnOrOptions;
+    if (maybeFn && typeof maybeFn === "object") {
+      staffRole = maybeFn.staffRole || "";
+    }
+  } else if (typeof fnOrOptions === "string") {
+    staffRole = fnOrOptions;
+    if (typeof maybeFn === "function") {
+      fn = maybeFn;
+    } else {
+      throw new Error("Callback function is required in withClinicContext");
+    }
+  } else if (typeof fnOrOptions === "object") {
+    staffRole = fnOrOptions.staffRole || "";
+    if (typeof maybeFn === "function") {
+      fn = maybeFn;
+    } else {
+      throw new Error("Callback function is required in withClinicContext");
+    }
+  } else {
+    throw new Error("Invalid arguments to withClinicContext");
   }
 
   const pool = getAppPool();
@@ -38,6 +81,7 @@ export async function withClinicContext<T>(
     }
 
     await client.query("SELECT set_config('app.clinic_id', $1, true);", [clinicId]);
+    await client.query("SELECT set_config('app.staff_role', $1, true);", [staffRole]);
     await client.query("SELECT set_config('app.is_super_admin', 'false', true);");
     await client.query("SELECT assert_mutually_exclusive_context();");
 
@@ -51,6 +95,7 @@ export async function withClinicContext<T>(
     // Reset session variables before returning connection to pool (defense-in-depth against leakage)
     try {
       await client.query("SELECT set_config('app.clinic_id', '', false);");
+      await client.query("SELECT set_config('app.staff_role', '', false);");
       await client.query("SELECT set_config('app.patient_account_id', '', false);");
       await client.query("SELECT set_config('app.is_super_admin', 'false', false);");
     } catch {
@@ -90,6 +135,7 @@ export async function withPatientContext<T>(
     }
 
     await client.query("SELECT set_config('app.patient_account_id', $1, true);", [accountId]);
+    await client.query("SELECT set_config('app.staff_role', '', true);");
     await client.query("SELECT set_config('app.is_super_admin', 'false', true);");
     await client.query("SELECT assert_mutually_exclusive_context();");
 
@@ -102,6 +148,7 @@ export async function withPatientContext<T>(
   } finally {
     try {
       await client.query("SELECT set_config('app.clinic_id', '', false);");
+      await client.query("SELECT set_config('app.staff_role', '', false);");
       await client.query("SELECT set_config('app.patient_account_id', '', false);");
       await client.query("SELECT set_config('app.is_super_admin', 'false', false);");
     } catch {
@@ -150,6 +197,9 @@ export async function withSuperAdminContext<T>(
     throw error;
   } finally {
     try {
+      await client.query("SELECT set_config('app.clinic_id', '', false);");
+      await client.query("SELECT set_config('app.staff_role', '', false);");
+      await client.query("SELECT set_config('app.patient_account_id', '', false);");
       await client.query("SELECT set_config('app.is_super_admin', 'false', false);");
     } catch {
       // Ignore cleanup error
