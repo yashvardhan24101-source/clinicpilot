@@ -89,6 +89,13 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     );
     reportAId = repRes.rows[0].id;
 
+    // Staff User in Clinic A
+    await adminClient.query(
+      `INSERT INTO staff_users (clinic_id, name, email, role, password_hash)
+       VALUES ($1, 'Staff Member Alpha', 'staff.member@clinic-alpha.com', 'receptionist', '$2a$10$dummyHashAlphaStaffXXXXXXX');`,
+      [clinicAId]
+    );
+
     // Patient Portal Account A linked to Patient A
     const accARes = await adminClient.query(
       `INSERT INTO patient_accounts (phone, name, email)
@@ -393,7 +400,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
 
     const linkRes = await withPatientContext(patientAccountBId, async (client) => {
       const res = await client.query(
-        `SELECT auth_link_patient_account_with_code($1, $2, $3, $4, 'phone_otp') AS success;`,
+        `SELECT * FROM auth_link_patient_account_with_code($1, $2, $3, $4, 'phone_otp');`,
         [patientAccountBId, clinicAId, patientAId, codeHash]
       );
       return res.rows[0];
@@ -403,7 +410,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     // Verify code cannot be reused (consumed)
     const reuseRes = await withPatientContext(patientAccountBId, async (client) => {
       const res = await client.query(
-        `SELECT auth_link_patient_account_with_code($1, $2, $3, $4, 'phone_otp') AS success;`,
+        `SELECT * FROM auth_link_patient_account_with_code($1, $2, $3, $4, 'phone_otp');`,
         [patientAccountBId, clinicAId, patientAId, codeHash]
       );
       return res.rows[0];
@@ -740,8 +747,10 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
       }
       expect(passSelectErr).toBeDefined();
       expect(passSelectErr.code).toBe("42501");
+    });
 
-      // Non-secret columns succeed
+    // Non-secret columns succeed on clean transaction
+    await withClinicContext(clinicAId, async (client) => {
       const allowedCols = await client.query("SELECT id, clinic_id, name, email, role, is_active FROM staff_users;");
       expect(allowedCols.rows.length).toBeGreaterThanOrEqual(1);
     });
@@ -756,8 +765,10 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
       }
       expect(planUpdErr).toBeDefined();
       expect(planUpdErr.code).toBe("42501");
+    });
 
-      // UPDATE privileged column 'is_active' fails with 42501
+    // UPDATE privileged column 'is_active' fails with 42501
+    await withClinicContext(clinicAId, async (client) => {
       let activeUpdErr: any = null;
       try {
         await client.query("UPDATE clinics SET is_active = false WHERE id = $1;", [clinicAId]);
@@ -766,8 +777,10 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
       }
       expect(activeUpdErr).toBeDefined();
       expect(activeUpdErr.code).toBe("42501");
+    });
 
-      // UPDATE permitted columns (name, city, timezone, updated_at) succeeds
+    // UPDATE permitted columns (name, city, timezone, updated_at) succeeds on clean transaction
+    await withClinicContext(clinicAId, async (client) => {
       const updRes = await client.query(
         `UPDATE clinics SET name = 'Clinic Alpha Hardened', city = 'Bengaluru South' WHERE id = $1 RETURNING name, city;`,
         [clinicAId]
