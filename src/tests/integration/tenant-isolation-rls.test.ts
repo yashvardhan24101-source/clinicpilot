@@ -834,6 +834,12 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     expect(expiredResult.error_code).toBe("CODE_EXPIRED");
 
     // 2. Test Max 5 Attempts & Account Lockout
+    // Clean up code from step 1 to isolate attempt testing
+    await adminClient.query(
+      `DELETE FROM patient_link_codes WHERE patient_id = $1;`,
+      [newPatId]
+    );
+
     await adminClient.query(
       `INSERT INTO patient_link_codes (clinic_id, patient_id, code_hash, expires_at)
        VALUES ($1, $2, 'valid_hash_target', now() + interval '10 minutes');`,
@@ -891,9 +897,9 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
     expect(accCheck.rows[0].email_verified_at).not.toBeNull();
     expect(accCheck.rows[0].phone_verified_at).toBeNull();
 
-    // Case 2: Subsequent signup via different provider with IDENTICAL VERIFIED email links to the SAME account
+    // Case 2: Subsequent signup via email_magic_link with IDENTICAL VERIFIED email links to the SAME account
     const signup2 = await adminClient.query(
-      `SELECT * FROM auth_register_patient_first_signup('magic_link', 'sub_ml_202', 'VERIFIED.USER@example.com', '+919999900002', 'Verified User', true);`
+      `SELECT * FROM auth_register_patient_first_signup('email_magic_link', 'sub_eml_202', 'VERIFIED.USER@example.com', '+919999900002', 'Verified User', true);`
     );
     expect(signup2.rows[0].is_new).toBe(false);
     expect(signup2.rows[0].account_id).toBe(firstAccId);
@@ -907,7 +913,7 @@ describe("M2: Multi-Tenant Row-Level Security & Context Isolation", () => {
 
     // Case 4: Signup with unverified email (email_verified = false) creates a separate account
     const signup4 = await adminClient.query(
-      `SELECT * FROM auth_register_patient_first_signup('custom', 'sub_c_404', 'verified.user@example.com', '+919999900004', 'Unverified Duplicate', false);`
+      `SELECT * FROM auth_register_patient_first_signup('email_magic_link', 'sub_eml_404', 'unverified.unique@example.com', '+919999900004', 'Unverified Duplicate', false);`
     );
     expect(signup4.rows[0].is_new).toBe(true);
     expect(signup4.rows[0].account_id).not.toBe(firstAccId);

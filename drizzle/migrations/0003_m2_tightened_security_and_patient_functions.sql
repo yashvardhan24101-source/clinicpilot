@@ -24,17 +24,62 @@ ALTER TABLE staff_invites ALTER COLUMN created_by DROP NOT NULL;
 ALTER TABLE staff_invites ADD COLUMN IF NOT EXISTS name text;
 
 -- ============================================================================
--- 2. Policies for patient_link_codes
+-- 2. Policies for patient_link_codes, staff_invites & audit_log
 -- ============================================================================
 -- Staff in the clinic can view and manage link codes for patients in their clinic
 DROP POLICY IF EXISTS patient_link_codes_tenant_policy ON patient_link_codes;
 CREATE POLICY patient_link_codes_tenant_policy ON patient_link_codes FOR ALL
   USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid);
 
--- Super-admin platform policy
+-- Super-admin platform policy for patient_link_codes
 DROP POLICY IF EXISTS patient_link_codes_super_admin_policy ON patient_link_codes;
 CREATE POLICY patient_link_codes_super_admin_policy ON patient_link_codes FOR ALL
   USING (current_setting('app.is_super_admin', true) = 'true');
+
+-- staff_invites: Reads visible to clinic staff; writes require app.staff_role = 'owner'; super_admin has full platform access
+DROP POLICY IF EXISTS staff_invites_tenant_policy ON staff_invites;
+DROP POLICY IF EXISTS staff_invites_select_policy ON staff_invites;
+DROP POLICY IF EXISTS staff_invites_insert_policy ON staff_invites;
+DROP POLICY IF EXISTS staff_invites_update_policy ON staff_invites;
+DROP POLICY IF EXISTS staff_invites_delete_policy ON staff_invites;
+DROP POLICY IF EXISTS staff_invites_super_admin_policy ON staff_invites;
+
+CREATE POLICY staff_invites_select_policy ON staff_invites FOR SELECT
+  USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid);
+
+CREATE POLICY staff_invites_insert_policy ON staff_invites FOR INSERT
+  WITH CHECK (
+    (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid AND current_setting('app.staff_role', true) = 'owner')
+    OR current_setting('app.is_super_admin', true) = 'true'
+  );
+
+CREATE POLICY staff_invites_update_policy ON staff_invites FOR UPDATE
+  USING (
+    (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid AND current_setting('app.staff_role', true) = 'owner')
+    OR current_setting('app.is_super_admin', true) = 'true'
+  )
+  WITH CHECK (
+    (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid AND current_setting('app.staff_role', true) = 'owner')
+    OR current_setting('app.is_super_admin', true) = 'true'
+  );
+
+CREATE POLICY staff_invites_delete_policy ON staff_invites FOR DELETE
+  USING (
+    (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid AND current_setting('app.staff_role', true) = 'owner')
+    OR current_setting('app.is_super_admin', true) = 'true'
+  );
+
+CREATE POLICY staff_invites_super_admin_policy ON staff_invites FOR ALL
+  USING (current_setting('app.is_super_admin', true) = 'true');
+
+-- audit_log: INSERT policy allowing clinic_id IS NULL, matching clinic_id, or super_admin
+DROP POLICY IF EXISTS audit_log_insert_policy ON audit_log;
+CREATE POLICY audit_log_insert_policy ON audit_log FOR INSERT
+  WITH CHECK (
+    clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
+    OR clinic_id IS NULL
+    OR current_setting('app.is_super_admin', true) = 'true'
+  );
 
 -- ============================================================================
 -- 3. Least-Privilege Grants & Revocations
@@ -54,41 +99,6 @@ GRANT UPDATE (name, city, timezone, updated_at) ON clinics TO clinicpilot_app;
 
 -- Ensure clinicpilot_app has access to patient_link_codes for staff generation
 GRANT SELECT, INSERT, UPDATE, DELETE ON patient_link_codes TO clinicpilot_app;
-
--- ============================================================================
--- 4. Staff Role Context (app.staff_role) & Policy Level Permissions
--- ============================================================================
--- staff_invites: Reads visible to clinic staff; writes require app.staff_role = 'owner'
-DROP POLICY IF EXISTS staff_invites_tenant_policy ON staff_invites;
-DROP POLICY IF EXISTS staff_invites_select_policy ON staff_invites;
-DROP POLICY IF EXISTS staff_invites_insert_policy ON staff_invites;
-DROP POLICY IF EXISTS staff_invites_update_policy ON staff_invites;
-DROP POLICY IF EXISTS staff_invites_delete_policy ON staff_invites;
-
-CREATE POLICY staff_invites_select_policy ON staff_invites FOR SELECT
-  USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid);
-
-CREATE POLICY staff_invites_insert_policy ON staff_invites FOR INSERT
-  WITH CHECK (
-    clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
-    AND current_setting('app.staff_role', true) = 'owner'
-  );
-
-CREATE POLICY staff_invites_update_policy ON staff_invites FOR UPDATE
-  USING (
-    clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
-    AND current_setting('app.staff_role', true) = 'owner'
-  )
-  WITH CHECK (
-    clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
-    AND current_setting('app.staff_role', true) = 'owner'
-  );
-
-CREATE POLICY staff_invites_delete_policy ON staff_invites FOR DELETE
-  USING (
-    clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid
-    AND current_setting('app.staff_role', true) = 'owner'
-  );
 
 -- staff_users: Grant column-level UPDATE on role, but enforce at policy/trigger level that role changes require 'owner'
 GRANT UPDATE (role) ON staff_users TO clinicpilot_app;
@@ -227,7 +237,7 @@ BEGIN
   WHERE clinic_id = p_clinic_id
     AND patient_id = p_patient_id
     AND used_at IS NULL
-  ORDER BY created_at DESC
+  ORDER BY created_at DESC, id DESC
   LIMIT 1
   FOR UPDATE;
 
@@ -354,7 +364,7 @@ BEGIN
     )
     VALUES (
       p_name,
-      v_clean_email,
+      CASE WHEN p_email_verified IS TRUE THEN v_clean_email ELSE NULL END,
       v_clean_phone,
       CASE WHEN p_email_verified IS TRUE AND v_clean_email IS NOT NULL THEN now() ELSE NULL END,
       NULL -- Phone is always unverified on first social/magic-link signup
@@ -381,7 +391,7 @@ GRANT EXECUTE ON FUNCTION auth_register_patient_first_signup(text, text, text, t
 
 -- Function 4: Super-Admin Approval of Clinic Request (Atomic Clinic + Owner Invite + Audit)
 DROP FUNCTION IF EXISTS super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz);
-DROP FUNCTION IF EXISTS super_admin_approve_clinic_request(uuid, text, text, text, text, text, timestamptz);
+DROP FUNCTION IF EXISTS super_admin_approve_clinic_request(uuid, text, text, text, text, timestamptz, text);
 CREATE OR REPLACE FUNCTION super_admin_approve_clinic_request(
   p_request_id uuid,
   p_slug text,
